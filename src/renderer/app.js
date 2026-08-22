@@ -362,6 +362,19 @@ function hideLock() {
   $('#lock-error').hidden = true;
 }
 
+/** Say plainly what the checkbox does, so nobody has to guess. */
+function updateRememberHint() {
+  const remember = $('#lock-remember').checked;
+  const hint = $('#server-hint');
+  if (remember) {
+    hint.textContent = $('#lock-server').value
+      ? 'Wird in ~/.nula/config.json abgelegt, damit du sie nicht jedes Mal eintippen musst.'
+      : 'Adresse deines eigenen Nula-Servers.';
+  } else {
+    hint.textContent = 'Bleibt nur im Arbeitsspeicher. Beim nächsten Start ist das Feld wieder leer.';
+  }
+}
+
 async function submitUnlock(e) {
   e.preventDefault();
   const btn = $('#btn-unlock');
@@ -376,6 +389,7 @@ async function submitUnlock(e) {
   const res = await window.nula.unlock({
     serverUrl: $('#lock-server').value,
     password: $('#lock-pass').value,
+    rememberUrl: $('#lock-remember').checked,
   });
 
   btn.classList.remove('is-busy');
@@ -504,6 +518,7 @@ function wire() {
 
   // Lock screen
   $('#lock-form').addEventListener('submit', submitUnlock);
+  $('#lock-remember').addEventListener('change', updateRememberHint);
   $('#btn-reveal').addEventListener('click', () => {
     const input = $('#lock-pass');
     const shown = input.type === 'text';
@@ -618,10 +633,14 @@ function subscribe() {
   const res = await call(window.nula.bootstrap(), { silent: true });
   if (res.ok) {
     document.body.dataset.platform = res.data.platform;
+    $('#lock-remember').checked = res.data.rememberServerUrl !== false;
     if (res.data.serverUrl) {
       $('#lock-server').value = res.data.serverUrl;
       $('#server-hint').textContent = 'Gespeicherte Adresse. Änderbar, falls dein Server umgezogen ist.';
+    } else if (res.data.rememberServerUrl === false) {
+      $('#server-hint').textContent = 'Wird nicht gespeichert und muss jedes Mal eingetragen werden.';
     }
+    updateRememberHint();
     if (!res.data.locked) {
       hideLock();
       return;

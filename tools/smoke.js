@@ -61,7 +61,23 @@ app.whenReady().then(async () => {
   // 1: lock screen, dark
   await shoot(win, 'lock-dark');
 
-  // 2: lock screen, light
+  // 2: lock screen with the URL filled in and remembering switched off
+  await win.webContents.executeJavaScript(`
+    document.querySelector('#lock-server').value = 'https://sync.example.com';
+    document.querySelector('#lock-remember').checked = false;
+    updateRememberHint();
+    true;
+  `);
+  await pause(260);
+  await shoot(win, 'lock-remember-off');
+
+  await win.webContents.executeJavaScript(`
+    document.querySelector('#lock-remember').checked = true;
+    updateRememberHint();
+    true;
+  `);
+
+  // 3: lock screen, light
   await win.webContents.executeJavaScript(`document.documentElement.dataset.theme = 'light'`);
   await pause(320);
   await shoot(win, 'lock-light');

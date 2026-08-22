@@ -2,6 +2,29 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.1.0] - 2026-08-22
+
+### Neu
+- Checkbox **"URL merken"** im Sperrbildschirm. Bisher wurde die Server-Adresse immer in
+  `~/.nula/config.json` geschrieben; jetzt ist das eine bewusste Entscheidung
+- Die Entscheidung selbst wird gemerkt, damit der Haken beim nächsten Start richtig steht.
+  Ist er entfernt, wird eine bereits gespeicherte Adresse beim nächsten Entsperren gelöscht
+- Der Hinweistext unter dem Feld sagt jeweils, was passiert: gespeichert wird in
+  `~/.nula/config.json`, oder die Adresse bleibt nur im Arbeitsspeicher
+- Die Geräte-ID bleibt in jedem Fall erhalten. Ohne sie sähe jeder Start wie ein neues
+  Gerät aus und es würden sich verwaiste Tabs ansammeln
+- `NULA_CONFIG_DIR` verlegt die Konfiguration an einen anderen Ort. Nützlich für portable
+  Installationen und dafür, dass die Tests nicht das echte Benutzerverzeichnis anfassen
+
+### Behoben
+- Die neue Checkbox stand zunächst über statt neben ihrem Text, weil die allgemeine Regel
+  für Formular-Labels spezifischer war und das Flex-Layout überstimmt hat
+
+### Tests
+- Integrationstest auf 38 Prüfungen: sieben davon decken ab, dass mit Haken gespeichert
+  wird, ohne Haken nichts in der Datei landet und die Geräte-ID beides überlebt
+- Zusätzlicher Screenshot im Oberflächentest mit abgewähltem Haken
+
 ## [2.0.0] - 2026-08-22
 
 Kryptographie auf BSI TR-02102-1 in der Fassung 2026-01 gebracht und alle Pakete aktualisiert.

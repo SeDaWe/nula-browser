@@ -210,6 +210,36 @@ app.whenReady().then(async () => {
   });
   check('Hybride Versiegelung laesst sich unter Electron oeffnen', opened.text === 'geheim');
 
+  // --- optional server URL --------------------------------------------------
+  console.log('\nGemerkte Server-Adresse');
+  const cfgDir = path.join(os.tmpdir(), `nula-cfg-${crypto.randomBytes(4).toString('hex')}`);
+  process.env.NULA_CONFIG_DIR = cfgDir;
+  const config = require('../src/main/config');
+
+  check('Voreinstellung merkt die Adresse', config.load().rememberServerUrl === true);
+  check('Ohne Zutun ist keine Adresse gespeichert', config.load().serverUrl === null);
+
+  config.save({ serverUrl: 'https://sync.example.com', rememberServerUrl: true });
+  config.reset();
+  check('Mit Haken landet die Adresse in der Konfiguration',
+    config.load().serverUrl === 'https://sync.example.com');
+
+  config.save({ serverUrl: null, rememberServerUrl: false });
+  config.reset();
+  check('Ohne Haken wird sie entfernt', config.load().serverUrl === null);
+  check('Die Wahl selbst bleibt erhalten', config.load().rememberServerUrl === false);
+  check('Sie steht auch nicht mehr in der Datei',
+    !fs.readFileSync(config.CONFIG_FILE, 'utf8').includes('sync.example.com'));
+
+  config.ensureDeviceId();
+  const keptId = config.load().deviceId;
+  config.save({ serverUrl: null, rememberServerUrl: false });
+  config.reset();
+  check('Die Geraete-ID ueberlebt das Abwaehlen', config.load().deviceId === keptId);
+
+  fs.rmSync(cfgDir, { recursive: true, force: true });
+  delete process.env.NULA_CONFIG_DIR;
+
   // --- detached cleaner ----------------------------------------------------
   // Chromium holds handles into the profile until well after quit, so the
   // cleaner has to survive the app. Verify it actually removes a locked tree.

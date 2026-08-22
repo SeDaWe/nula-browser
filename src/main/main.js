@@ -331,7 +331,7 @@ async function ensureInboxIdentity(info) {
   }
 }
 
-async function connectAndUnlock({ serverUrl, password }) {
+async function connectAndUnlock({ serverUrl, password, rememberUrl }) {
   const url = (serverUrl || config.load().serverUrl || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Keine Server-Adresse konfiguriert');
   if (!/^https?:\/\//i.test(url)) throw new Error('Server-Adresse muss mit http:// oder https:// beginnen');
@@ -363,7 +363,10 @@ async function connectAndUnlock({ serverUrl, password }) {
     }
   }
 
-  config.save({ serverUrl: url });
+  // Only the address is optional here. The device id has to persist either way,
+  // otherwise every start would look like a new device and pile up stale tabs.
+  const remember = rememberUrl !== false;
+  config.save({ serverUrl: remember ? url : null, rememberServerUrl: remember });
   config.ensureDeviceId();
 
   state.api = api;
@@ -421,6 +424,7 @@ function registerIpc() {
     const cfg = config.load();
     return {
       serverUrl: cfg.serverUrl,
+      rememberServerUrl: cfg.rememberServerUrl !== false,
       deviceName: cfg.deviceName,
       locked: state.locked,
       platform: process.platform,

@@ -79,6 +79,10 @@ Passwort eingeben, und alles ist da.
 Das Entsperren dauert bewusst rund eine Sekunde: Argon2id rechnet mit 256 MiB Speicher,
 damit Rateversuche auf Grafikkarten teuer werden.
 
+Der Haken **URL merken** entscheidet, ob die Server-Adresse in `~/.nula/config.json` landet.
+Ohne ihn bleibt sie nur im Arbeitsspeicher und das Feld ist beim nächsten Start wieder leer.
+Das Passwort wird ohnehin nie gespeichert.
+
 > Es gibt keine Wiederherstellung. Ist das Passwort weg, ist der Vault weg. Das ist der
 > Preis dafür, dass der Server nichts entschlüsseln kann.
 
@@ -102,7 +106,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.0.0-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.1.0-x86_64.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```
@@ -235,8 +239,18 @@ iOS-Kurzbefehle: **[API.md](https://github.com/SeDaWe/nula-server/blob/main/API.
 
 ## Was Nula auf die Platte schreibt
 
-Genau eine Datei: `~/.nula/config.json`. Darin stehen die Server-Adresse, ein Gerätename und
-eine zufällige Geräte-ID. Keine URLs, keine Schlüssel, keine Sitzungsdaten.
+Genau eine Datei: `~/.nula/config.json`. Darin stehen ein Gerätename, eine zufällige
+Geräte-ID und, falls du den Haken **URL merken** gesetzt lässt, die Adresse deines Servers.
+Keine besuchten URLs, keine Schlüssel, keine Sitzungsdaten.
+
+Die Geräte-ID bleibt in jedem Fall erhalten, auch ohne den Haken. Ohne sie sähe jeder Start
+wie ein neues Gerät aus, und im Vault würden sich verwaiste Tab-Listen ansammeln.
+
+Mit `NULA_CONFIG_DIR` lässt sich der Ort verlegen, etwa für eine portable Installation:
+
+```bash
+NULA_CONFIG_DIR=/pfad/zum/stick/nula npm start
+```
 
 Chromium legt beim Start unvermeidlich ein paar technische Dateien an. Die landen in einem
 zufällig benannten Ordner im Temp-Verzeichnis und werden beim Beenden gelöscht. Bricht die

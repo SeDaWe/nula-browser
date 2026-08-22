@@ -11,11 +11,17 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const CONFIG_DIR = path.join(os.homedir(), '.nula');
+// NULA_CONFIG_DIR keeps the tests away from the real home directory and lets a
+// portable install put its config next to the executable.
+const CONFIG_DIR = process.env.NULA_CONFIG_DIR || path.join(os.homedir(), '.nula');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 const DEFAULTS = {
   serverUrl: null,
+  // Whether the server address may be kept on disk at all. The choice itself is
+  // stored so the lock screen can show the checkbox in the right state; the
+  // address is only written when this is true.
+  rememberServerUrl: true,
   deviceId: null,
   deviceName: os.hostname(),
 };
@@ -49,4 +55,9 @@ function ensureDeviceId() {
   return load().deviceId;
 }
 
-module.exports = { load, save, ensureDeviceId, CONFIG_DIR };
+/** Drop the in-memory copy. Only used by the tests. */
+function reset() {
+  cache = null;
+}
+
+module.exports = { load, save, ensureDeviceId, reset, CONFIG_DIR, CONFIG_FILE };
