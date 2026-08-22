@@ -1,0 +1,7 @@
+# Store everything with LF. The server and its container run on Linux, and a
+# Dockerfile or shell snippet checked out with CRLF breaks there.
+* text=auto eol=lf
+*.png binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

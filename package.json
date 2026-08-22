@@ -1,0 +1,60 @@
+{
+  "name": "nula-browser",
+  "productName": "Nula",
+  "version": "2.0.0",
+  "description": "Privacy browser that leaves nothing on the machine and syncs tabs and bookmarks end-to-end encrypted through your own server.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "electron tools/integration.js",
+    "test:ui": "electron tools/smoke.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "@phosphor-icons/web": "^2.1.2",
+    "hash-wasm": "^4.12.0"
+  },
+  "devDependencies": {
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "net.nula.browser",
+    "productName": "Nula",
+    "files": [
+      "src/**/*",
+      "node_modules/@phosphor-icons/web/src/regular/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "Nula-${version}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "Nula-${version}-${arch}.${ext}",
+      "darkModeSupport": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "license": "MIT"
+}
