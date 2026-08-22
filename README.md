@@ -55,13 +55,16 @@ Schlüsselaustauschs für Einträge von außen. Nur der erste verlässt jemals d
 
 ## Einrichten
 
-**1. Server starten** (siehe [nula-server](https://github.com/SeDaWe/nula-server)):
+**1. Server starten** (Anleitung in [nula-server](https://github.com/SeDaWe/nula-server)):
 
 ```bash
 git clone https://github.com/SeDaWe/nula-server.git
 cd nula-server
-docker compose up -d
+cp .env.example .env      # Domain eintragen
+docker compose up -d --build
 ```
+
+Der Stack bringt Caddy mit und holt sich das Zertifikat für deine Domain selbst.
 
 **2. Browser starten:**
 
