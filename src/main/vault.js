@@ -2,8 +2,8 @@
 
 /*
  * The vault is the entire synced state: tabs, bookmarks, settings.
- * It lives in RAM here, is encrypted before it touches the network, and is never
- * written to disk by Nula.
+ * It lives in RAM here and is encrypted before it touches the network or an
+ * explicitly selected backup file.
  *
  * Merge strategy: last-write-wins per entity, driven by an `updatedAt` timestamp
  * and a tombstone list for deletions. Good enough for a single user across a

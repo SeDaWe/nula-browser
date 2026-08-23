@@ -2,6 +2,31 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.3.0] - 2026-08-23
+
+### Neu
+- Vollständiger verschlüsselter Datenexport direkt in den Einstellungen als portable
+  `.nula-backup.json`
+- Enthalten sind Vault, Tabs, Lesezeichen, Notizen, Einstellungen, Tombstones,
+  Inbox-Identität, lokale Gerätekonfiguration, Sync-Status, API-Token-Metadaten und noch
+  ausstehende verschlüsselte Inbox-Einträge
+- Aktuelle Tabs werden vor dem Export erfasst; nicht erreichbare optionale Server-Metadaten
+  verhindern keinen lokalen Vault-Export und werden im Ergebnis kenntlich gemacht
+
+### Sicherheit
+- Eigener HKDF-Kontext `nula-backup-v1`, frischer 256-Bit-Salt und AES-256-GCM mit
+  authentifizierter Formatbindung statt Wiederverwendung eines normalen Vault-Chiffrats
+- Master-Passwort, Auth-Key und API-Token-Geheimnisse werden nie exportiert; URLs, Notizen und
+  private Inbox-Schlüssel erscheinen ausschließlich im verschlüsselten Payload
+- Jedes Backup wird vor dem Schreiben entschlüsselt und verifiziert, auf 32 MiB begrenzt,
+  atomisch geschrieben, gegen Symlink-Ziele geschützt und nach Möglichkeit auf `0600` gesetzt
+
+### Dokumentation und Tests
+- README dokumentiert Umfang, Grenzen, Kryptographie und den bewusst gewählten Speicherort;
+  die Aussage zu dauerhaft geschriebenen Dateien berücksichtigt nun explizite Exporte
+- Electron-Integrationstest auf 46 Prüfungen erweitert: Roundtrip, fehlender Klartext,
+  Manipulationserkennung, sicheres Ersetzen und keine temporären Restdateien
+
 ## [2.2.0] - 2026-08-23
 
 ### Sicherheit

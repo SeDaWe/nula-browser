@@ -23,7 +23,7 @@ const problems = [];
 
 // Stub the IPC surface so the renderer boots exactly as it would in the app.
 const STUBS = {
-  'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'SMOKE', locked: true, platform: 'win32', version: '2.2.0' } },
+  'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'SMOKE', locked: true, platform: 'win32', version: '2.3.0' } },
   'nula:activity': { ok: true, data: null },
 };
 
@@ -114,7 +114,16 @@ app.whenReady().then(async () => {
   await pause(320);
   await shoot(win, 'chrome-settings-dark');
 
-  // 5: light theme, devices panel with an empty state
+  // 5: the complete export card at the bottom of settings
+  await win.webContents.executeJavaScript(`
+    const body = document.querySelector('.panel-view[data-view="settings"] .panel-body');
+    body.scrollTop = body.scrollHeight;
+    true;
+  `);
+  await pause(320);
+  await shoot(win, 'chrome-backup-dark');
+
+  // 6: light theme, devices panel with an empty state
   await win.webContents.executeJavaScript(`
     document.documentElement.dataset.theme = 'light';
     ui.settings.theme = 'light';

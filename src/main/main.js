@@ -6,17 +6,19 @@
  * Disk policy: Chromium's profile directory is redirected to a per-run temp
  * folder and deleted on exit. The browsing session itself uses a non-persistent
  * partition, so history, cookies, cache and storage never reach the disk at all.
- * The only file Nula writes to the home directory is ~/.nula/config.json, which
- * holds the server URL and a random device id. Nothing else.
+ * The only file Nula writes automatically to the home directory is
+ * ~/.nula/config.json, which holds the server URL and a random device id.
+ * Explicit exports are encrypted and go only to the path the user chooses.
  */
 
-const { app, BrowserWindow, session, ipcMain, protocol, net, shell, globalShortcut, Menu } = require('electron');
+const { app, BrowserWindow, dialog, session, ipcMain, protocol, net, shell, globalShortcut, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
 
 const config = require('./config');
+const backup = require('./backup');
 const vaultcrypto = require('./vaultcrypto');
 const { NulaApi } = require('./api');
 const { SyncEngine } = require('./sync');
@@ -115,6 +117,7 @@ const state = {
   locked: true,
   lockTimer: null,
   syncStatus: { state: 'idle', detail: null },
+  exportInProgress: false,
   quitting: false,
 };
 
@@ -457,6 +460,127 @@ function requireUnlocked() {
   if (state.locked || !state.sync) throw new Error('Browser ist gesperrt');
 }
 
+async function exportAllData() {
+  requireUnlocked();
+  if (state.exportInProgress) throw new Error('Ein Export läuft bereits');
+  state.exportInProgress = true;
+  resetLockTimer();
+  try {
+    const timestamp = new Date().toISOString();
+    const fileStamp = timestamp.replace(/[:.]/g, '-');
+    const result = await dialog.showSaveDialog(state.win, {
+      title: 'Verschlüsseltes Nula-Backup exportieren',
+      defaultPath: path.join(app.getPath('documents'), `Nula-Backup-${fileStamp}.nula-backup.json`),
+      buttonLabel: 'Backup exportieren',
+      filters: [{ name: 'Nula-Backup', extensions: ['json'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+
+    requireUnlocked();
+    const keys = state.keys;
+    const api = state.api;
+    const sync = state.sync;
+    captureTabsIntoVault();
+    await sync.flush();
+
+    const [tokenResult, inboxResult] = await Promise.allSettled([
+      api.listTokens(),
+      api.getInbox(),
+    ]);
+    requireUnlocked();
+    if (state.keys !== keys || state.api !== api || state.sync !== sync) {
+      throw new Error('Browser wurde während des Exports gesperrt');
+    }
+
+    const unavailable = [];
+    let tokenMetadata = [];
+    if (tokenResult.status === 'fulfilled' && Array.isArray(tokenResult.value?.tokens)) {
+      tokenMetadata = tokenResult.value.tokens.map((token) => ({
+        id: token.id,
+        name: token.name,
+        createdAt: token.createdAt,
+        lastUsedAt: token.lastUsedAt,
+      }));
+    } else {
+      unavailable.push('apiTokenMetadata');
+    }
+
+    let pendingInbox = [];
+    if (inboxResult.status === 'fulfilled' && Array.isArray(inboxResult.value?.items)) {
+      pendingInbox = inboxResult.value.items.map((entry) => ({
+        id: entry.id,
+        sealed: entry.sealed,
+        createdAt: entry.createdAt,
+      }));
+    } else {
+      unavailable.push('pendingInbox');
+    }
+
+    const cfg = config.load();
+    const payload = {
+      format: backup.PAYLOAD_FORMAT,
+      version: backup.BACKUP_VERSION,
+      exportedAt: timestamp,
+      application: {
+        name: 'Nula',
+        version: app.getVersion(),
+        platform: process.platform,
+      },
+      connection: {
+        serverUrl: api.base,
+        syncVersion: sync.version,
+        syncDirty: sync.dirty,
+      },
+      localConfig: {
+        serverUrl: cfg.serverUrl,
+        rememberServerUrl: cfg.rememberServerUrl,
+        deviceId: cfg.deviceId,
+        deviceName: cfg.deviceName,
+      },
+      vault: structuredClone(sync.vault),
+      serverData: {
+        apiTokenMetadata: tokenMetadata,
+        apiTokenSecretsIncluded: false,
+        pendingInbox,
+        unavailable,
+      },
+    };
+    const document = backup.createBackup({
+      encKey: keys.encKey,
+      clientSalt: keys.clientSaltHex,
+      argon2: keys.argon2,
+      payload,
+      exportedAt: timestamp,
+    });
+
+    // Never report success for a blob that this process cannot authenticate.
+    const verified = backup.decryptBackup(keys.encKey, document);
+    if (verified.exportedAt !== timestamp) throw new Error('Backup-Selbstprüfung fehlgeschlagen');
+
+    let filePath = result.filePath;
+    if (!filePath.toLowerCase().endsWith('.nula-backup.json')) {
+      filePath += '.nula-backup.json';
+    }
+    backup.writeBackupFile(filePath, document);
+    return {
+      canceled: false,
+      fileName: path.basename(filePath),
+      counts: {
+        tabs: payload.vault.tabs?.length || 0,
+        bookmarks: payload.vault.bookmarks?.length || 0,
+        notes: payload.vault.notes?.length || 0,
+        tokens: tokenMetadata.length,
+        pendingInbox: pendingInbox.length,
+      },
+      unavailable,
+    };
+  } finally {
+    state.exportInProgress = false;
+    resetLockTimer();
+  }
+}
+
 function registerIpc() {
   ipcMain.handle('nula:bootstrap', guard(async () => {
     const cfg = config.load();
@@ -571,6 +695,8 @@ function registerIpc() {
     resetLockTimer();
     pushVaultState();
   }));
+
+  ipcMain.handle('nula:backup:export', guard(async () => exportAllData()));
 
   // ---- sync ----
   ipcMain.handle('nula:sync:now', guard(async () => {

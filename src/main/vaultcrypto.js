@@ -95,7 +95,14 @@ async function deriveKeys(password, clientSaltHex, argon2Params) {
   master.fill(0);
   xSeed.fill(0);
 
-  return { authKeyHex: authKey.toString('hex'), encKey, x25519Priv, x25519PubHex, argon2: params };
+  return {
+    authKeyHex: authKey.toString('hex'),
+    encKey,
+    x25519Priv,
+    x25519PubHex,
+    clientSaltHex: clientSaltHex.toLowerCase(),
+    argon2: params,
+  };
 }
 
 // ---------------------------------------------------------------------------

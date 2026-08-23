@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('nula', {
     set: (patch) => invoke('nula:settings:set', patch),
   },
 
+  backup: {
+    exportAll: () => invoke('nula:backup:export'),
+  },
+
   sync: {
     now: () => invoke('nula:sync:now'),
   },

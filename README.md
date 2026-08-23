@@ -22,6 +22,7 @@ Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 - [Tastenkürzel](#tastenkürzel)
 - [Was beim Sperren passiert](#was-beim-sperren-passiert)
 - [Sync-Verhalten](#sync-verhalten)
+- [Daten exportieren](#daten-exportieren)
 - [Von außen befüllen](#von-außen-befüllen)
 - [Was Nula auf die Platte schreibt](#was-nula-auf-die-platte-schreibt)
 - [Kryptographie](#kryptographie)
@@ -90,8 +91,9 @@ Der Haken **URL merken** entscheidet, ob die Server-Adresse in `~/.nula/config.j
 Ohne ihn bleibt sie nur im Arbeitsspeicher und das Feld ist beim nächsten Start wieder leer.
 Das Passwort wird ohnehin nie gespeichert.
 
-> Es gibt keine Wiederherstellung. Ist das Passwort weg, ist der Vault weg. Das ist der
-> Preis dafür, dass der Server nichts entschlüsseln kann.
+> Nula kann dein Passwort nicht wiederherstellen. Ist es weg, bleiben auch ein exportiertes
+> Backup und der Server-Vault unlesbar. Das ist der Preis dafür, dass der Server nichts
+> entschlüsseln kann.
 
 ---
 
@@ -113,7 +115,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.2.0-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.3.0-x86_64.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```
@@ -226,6 +228,38 @@ MacBooks, sieht sie aber unter **Geräte** und kann sie mit einem Klick öffnen.
 
 ---
 
+## Daten exportieren
+
+Unter **Einstellungen → Vollständiger Datenexport** erzeugt Nula eine portable Datei mit der
+Endung `.nula-backup.json`. Vor dem Export werden die gerade geöffneten Tabs erfasst und ein
+letzter Sync-Versuch abgewartet.
+
+Enthalten sind:
+
+- der komplette Vault mit Tabs, Lesezeichen, Notizen, Einstellungen, Tombstones und der
+  privaten Inbox-Identität
+- die lokale Konfiguration mit Geräte-ID, Gerätename und der optional gemerkten Server-Adresse
+- die aktuell verwendete Server-Adresse, Sync-Version und der lokale Sync-Status
+- Namen, IDs und Zeitstempel der API-Tokens sowie noch nicht übernommene, bereits
+  verschlüsselte Inbox-Einträge
+
+Nicht enthalten sind das Master-Passwort, der Authentifizierungsschlüssel oder die geheimen
+Werte bereits erstellter API-Tokens. Diese Token-Geheimnisse gibt der Server absichtlich nur
+ein einziges Mal beim Erstellen aus. Verlauf, Cookies und Cache können ebenfalls nicht
+exportiert werden, weil Nula sie nie dauerhaft führt.
+
+Die JSON-Hülle enthält nur Formatversion, Exportzeit und die nicht geheimen
+Argon2id-Parameter. Alle eigentlichen Daten werden mit AES-256-GCM verschlüsselt; ein frischer
+Schlüssel wird über HKDF-SHA256 mit dem eigenen Kontext `nula-backup-v1` abgeleitet. Nula
+entschlüsselt und authentifiziert den fertigen Blob vor dem Schreiben noch einmal zur
+Selbstprüfung. Wo das Dateisystem es unterstützt, erhält die Datei Modus `0600`.
+
+Das Backup ersetzt keine Passwort-Wiederherstellung: Zum Entschlüsseln ist weiterhin exakt
+dasselbe Master-Passwort nötig. Die Oberfläche von Version 2.3 exportiert und verifiziert das
+Format; eine Import-Oberfläche ist noch nicht Bestandteil dieses Releases.
+
+---
+
 ## Von außen befüllen
 
 Im Panel unter **API** erstellst du ein Token. Damit können andere Programme Lesezeichen und
@@ -248,9 +282,13 @@ iOS-Kurzbefehle: **[API.md](https://github.com/SeDaWe/nula-server/blob/main/API.
 
 ## Was Nula auf die Platte schreibt
 
-Genau eine Datei: `~/.nula/config.json`. Darin stehen ein Gerätename, eine zufällige
-Geräte-ID und, falls du den Haken **URL merken** gesetzt lässt, die Adresse deines Servers.
-Keine besuchten URLs, keine Schlüssel, keine Sitzungsdaten.
+Ohne eine bewusste Exportaktion genau eine Datei: `~/.nula/config.json`. Darin stehen ein
+Gerätename, eine zufällige Geräte-ID und, falls du den Haken **URL merken** gesetzt lässt,
+die Adresse deines Servers. Keine besuchten URLs, keine Schlüssel, keine Sitzungsdaten.
+
+Ein über **Vollständiger Datenexport** gewähltes Backup wird zusätzlich genau an den im
+Speichern-Dialog ausgewählten Ort geschrieben. Es enthält sensible Daten ausschließlich
+verschlüsselt und wird niemals automatisch angelegt.
 
 Die Geräte-ID bleibt in jedem Fall erhalten, auch ohne den Haken. Ohne sie sähe jeder Start
 wie ein neues Gerät aus, und im Vault würden sich verwaiste Tab-Listen ansammeln.
@@ -323,7 +361,8 @@ mit, wo Argon2 fehlt, deshalb muss dort nachgewiesen werden, dass die WebAssembl
 und ML-KEM tatsächlich laufen.
 
 Zusätzlich prüft der Test, dass gefährliche Fremdschemata wie `file://` und `javascript://`
-nicht navigiert werden.
+nicht navigiert werden. Der Backup-Test prüft vollständigen Roundtrip, fehlenden Klartext,
+Manipulationserkennung, sicheres Ersetzen und das Entfernen temporärer Dateien.
 
 Die Server- und Protokolltests liegen im
 [Server-Repository](https://github.com/SeDaWe/nula-server#tests) und erwarten dieses
@@ -341,10 +380,11 @@ src/
     sync.js         Live-Sync, Konfliktauflösung, Inbox
     vault.js        Datenformat und Merge-Regeln
     vaultcrypto.js  Argon2id, Vault-Verschlüsselung, hybrides Entsiegeln
+    backup.js       Verschlüsseltes Exportformat und sicheres Dateischreiben
     api.js          HTTP-Client zum Server
     blocker.js      Tracker-Blocker und Header-Bereinigung
     urls.js         Adresse oder Suche
-    config.js       Die einzige Datei, die auf die Platte geht
+    config.js       Die einzige automatisch dauerhaft geschriebene Datei
     cleanup.js      Abgekoppelter Aufräumer für das Temp-Profil
   preload/
     chrome.js       Brücke zur Oberfläche

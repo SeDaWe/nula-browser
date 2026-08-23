@@ -215,6 +215,78 @@ app.whenReady().then(async () => {
   });
   check('Hybride Versiegelung laesst sich unter Electron oeffnen', opened.text === 'geheim');
 
+  // --- encrypted full backup -----------------------------------------------
+  console.log('\nVollständiger Datenexport');
+  const backup = require('../src/main/backup');
+  const exportedAt = new Date().toISOString();
+  const backupPayload = {
+    format: backup.PAYLOAD_FORMAT,
+    version: backup.BACKUP_VERSION,
+    exportedAt,
+    application: { name: 'Nula', version: 'test', platform: process.platform },
+    connection: { serverUrl: 'https://private.example', syncVersion: 7, syncDirty: false },
+    localConfig: { serverUrl: null, rememberServerUrl: false, deviceId: 'abc', deviceName: 'TEST' },
+    vault: {
+      schema: 1,
+      tabs: [{ id: 't1', url: 'https://secret.example/tab' }],
+      bookmarks: [{ id: 'b1', url: 'https://secret.example/bookmark' }],
+      notes: [{ id: 'n1', text: 'streng geheim' }],
+      settings: { searchEngine: 'duckduckgo' },
+      tombstones: [],
+      identity,
+      updatedAt: exportedAt,
+    },
+    serverData: {
+      apiTokenMetadata: [{ id: 'token1', name: 'Handy' }],
+      apiTokenSecretsIncluded: false,
+      pendingInbox: [],
+      unavailable: [],
+    },
+  };
+  const backupDoc = backup.createBackup({
+    encKey: keys.encKey,
+    clientSalt: keys.clientSaltHex,
+    argon2: keys.argon2,
+    payload: backupPayload,
+    exportedAt,
+  });
+  const backupText = JSON.stringify(backupDoc);
+  check('Backup trägt eine eindeutige Formatversion',
+    backupDoc.format === backup.BACKUP_FORMAT && backupDoc.version === 1);
+  check('URLs, Notizen und private Inbox-Schlüssel stehen nicht im Klartext',
+    !backupText.includes('secret.example') &&
+    !backupText.includes('streng geheim') &&
+    !backupText.includes(identity.kemPrivate));
+
+  const restoredBackup = backup.decryptBackup(keys.encKey, backupDoc);
+  check('Vollständiger Vault und lokale Konfiguration überstehen den Roundtrip',
+    restoredBackup.vault.notes[0].text === 'streng geheim' &&
+    restoredBackup.vault.identity.kemPrivate === identity.kemPrivate &&
+    restoredBackup.localConfig.deviceId === 'abc');
+
+  const tamperedBackup = structuredClone(backupDoc);
+  const tamperedRaw = Buffer.from(tamperedBackup.encryption.blob, 'base64');
+  tamperedRaw[tamperedRaw.length - 1] ^= 1;
+  tamperedBackup.encryption.blob = tamperedRaw.toString('base64');
+  let tamperRejected = false;
+  try {
+    backup.decryptBackup(keys.encKey, tamperedBackup);
+  } catch {
+    tamperRejected = true;
+  }
+  check('Manipuliertes Backup wird abgelehnt', tamperRejected);
+
+  const backupDir = path.join(os.tmpdir(), `nula-backup-${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backupFile = path.join(backupDir, 'export.nula-backup.json');
+  backup.writeBackupFile(backupFile, backupDoc);
+  backup.writeBackupFile(backupFile, backupDoc);
+  check('Backup wird sicher geschrieben und kann ersetzt werden',
+    backup.parseBackup(fs.readFileSync(backupFile, 'utf8')).exportedAt === exportedAt);
+  check('Keine temporäre Klartext- oder Backup-Datei bleibt liegen',
+    fs.readdirSync(backupDir).join(',') === 'export.nula-backup.json');
+  fs.rmSync(backupDir, { recursive: true, force: true });
+
   // --- optional server URL --------------------------------------------------
   console.log('\nGemerkte Server-Adresse');
   const cfgDir = path.join(os.tmpdir(), `nula-cfg-${crypto.randomBytes(4).toString('hex')}`);

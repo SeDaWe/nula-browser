@@ -1,9 +1,10 @@
 'use strict';
 
 /*
- * Local config. This is the ONLY file Nula persists on disk, and it deliberately
- * contains no browsing data: just the sync server URL and a device identity.
- * Everything else lives in RAM or in the encrypted vault on the server.
+ * Local config. This is the only file Nula persists automatically, and it
+ * deliberately contains no browsing data: just the sync server URL and a
+ * device identity. Everything else lives in RAM, in the encrypted vault on the
+ * server, or in an encrypted export the user explicitly creates.
  */
 
 const os = require('node:os');

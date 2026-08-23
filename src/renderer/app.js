@@ -494,6 +494,21 @@ function wire() {
     document.documentElement.dataset.theme = e.target.checked ? 'light' : 'dark';
     window.nula.settings.set({ theme: e.target.checked ? 'light' : 'dark' });
   });
+  $('#backup-export').addEventListener('click', async () => {
+    const btn = $('#backup-export');
+    const label = btn.querySelector('span');
+    btn.disabled = true;
+    label.textContent = 'Backup wird erstellt';
+    const res = await call(window.nula.backup.exportAll());
+    btn.disabled = false;
+    label.textContent = 'Backup exportieren';
+    if (!res.ok || res.data?.canceled) return;
+    const counts = res.data.counts;
+    const unavailable = res.data.unavailable || [];
+    const total = counts.tabs + counts.bookmarks + counts.notes;
+    const suffix = unavailable.length ? ' (Server-Metadaten teilweise nicht erreichbar)' : '';
+    toast(`${res.data.fileName}: ${total} Vault-Einträge exportiert${suffix}`);
+  });
 
   // Tokens
   $('#token-create').addEventListener('click', async () => {
