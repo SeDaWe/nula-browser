@@ -23,18 +23,21 @@ Function nulaUpdatePageCreate
     Abort
   ${EndIf}
 
-  !insertmacro MUI_HEADER_TEXT "Updates" "Soll Nula selbst nach neuen Versionen suchen?"
-
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
     Abort
   ${EndIf}
 
-  ${NSD_CreateLabel} 0 0 100% 50u "Nula kann beim Start und danach alle sechs Stunden nachsehen, ob eine neuere Version vorliegt, und sie im Hintergrund laden. Installiert wird nie ohne deine Bestaetigung.$\r$\n$\r$\nJede Abfrage geht an GitHub und verraet dabei die IP dieser Installation. Du kannst das jederzeit in den Einstellungen aendern."
+  ; MUI2 ist an dieser Stelle noch nicht geladen, MUI_HEADER_TEXT gibt es also
+  ; nicht. Die Ueberschrift steht deshalb als eigenes Label auf der Seite.
+  ${NSD_CreateLabel} 0 0 100% 12u "Soll Nula selbst nach neuen Versionen suchen?"
   Pop $0
 
-  ${NSD_CreateCheckbox} 0 58u 100% 12u "Automatisch nach Updates suchen (empfohlen)"
+  ${NSD_CreateLabel} 0 16u 100% 50u "Nula kann beim Start und danach alle sechs Stunden nachsehen, ob eine neuere Version vorliegt, und sie im Hintergrund laden. Installiert wird nie ohne deine Bestaetigung.$\r$\n$\r$\nJede Abfrage geht an GitHub und verraet dabei die IP dieser Installation. Du kannst das jederzeit in den Einstellungen aendern."
+  Pop $0
+
+  ${NSD_CreateCheckbox} 0 72u 100% 12u "Automatisch nach Updates suchen (empfohlen)"
   Pop $NulaUpdateCheckbox
   ${NSD_Check} $NulaUpdateCheckbox
 
