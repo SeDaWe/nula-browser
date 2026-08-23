@@ -2,6 +2,19 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.10.0] - 2026-08-23
+
+### Korrekturen
+- **Das Panel lag hinter der Seite und war deshalb unsichtbar.** Die Tab-Ansicht ist eine native
+  `WebContentsView` über dem HTML der Oberfläche, und sie belegte die gesamte Fläche unter der
+  Chrome-Leiste — auch die 384 Pixel rechts, in denen Lesezeichen, Geräte, Einstellungen und API
+  gezeichnet werden. Der Hauptprozess wusste vom Panel überhaupt nichts (`grep -c panel` in
+  `main.js` und `tabs.js`: null). Ein Klick auf Einstellungen öffnete das Panel also korrekt,
+  nur sah man es nie. Betraf jede Sitzung, in der ein Tab offen war; im Screenshot-Test fiel es
+  nicht auf, weil der gar keine native Ansicht erzeugt
+- Die Entwicklerwerkzeuge gehen jetzt **abgedockt** auf. Angedockt lagen sie aus demselben Grund
+  hinter der Tab-Ansicht und waren damit ebenfalls nicht zu gebrauchen
+
 ## [2.9.0] - 2026-08-23
 
 ### Neu

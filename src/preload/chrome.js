@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('nula', {
   },
 
   window: (action) => invoke('nula:window', action),
+  panel: (open) => invoke('nula:panel', open),
 
   on: (event, handler) => {
     const channels = {

@@ -11,6 +11,7 @@ const path = require('node:path');
 const { isSafeNavigationUrl, NEW_TAB } = require('./urls');
 
 const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with renderer CSS
+const PANEL_WIDTH = 384; // .panel in the renderer CSS, keep in sync
 
 class TabManager {
   constructor(win, session, onChange) {
@@ -21,11 +22,29 @@ class TabManager {
     this.order = [];
     this.activeId = null;
     this.visible = true;
+    // Die Tab-Ansicht ist eine native View ueber dem HTML der Oberflaeche. Waere
+    // sie immer volle Breite, laege das Panel dahinter und bliebe unsichtbar -
+    // der Hauptprozess muss also wissen, ob es offen ist.
+    this.panelOpen = false;
   }
 
   bounds() {
     const [width, height] = this.win.getContentSize();
-    return { x: 0, y: CHROME_HEIGHT, width, height: Math.max(0, height - CHROME_HEIGHT) };
+    const reserved = this.panelOpen ? Math.min(PANEL_WIDTH, width) : 0;
+    return {
+      x: 0,
+      y: CHROME_HEIGHT,
+      width: Math.max(0, width - reserved),
+      height: Math.max(0, height - CHROME_HEIGHT),
+    };
+  }
+
+  /** Blendet das Panel ein oder aus und gibt der Tab-Ansicht entsprechend Platz. */
+  setPanelOpen(open) {
+    const next = !!open;
+    if (this.panelOpen === next) return;
+    this.panelOpen = next;
+    this.layout();
   }
 
   layout() {

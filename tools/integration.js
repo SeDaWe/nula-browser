@@ -124,6 +124,18 @@ app.whenReady().then(async () => {
     tabs.tabs.get(tabs.activeId).view.getBounds().width === 0);
   tabs.setVisible(true);
 
+  // Die Tab-Ansicht ist eine native View ueber dem HTML. Nimmt sie die volle
+  // Breite ein, liegt das Panel dahinter und ist unsichtbar - genau das war bis
+  // 2.10 der Fall, und Einstellungen liessen sich dadurch nie oeffnen.
+  const fullWidth = tabs.tabs.get(tabs.activeId).view.getBounds().width;
+  tabs.setPanelOpen(true);
+  const shrunk = tabs.tabs.get(tabs.activeId).view.getBounds().width;
+  check('Bei offenem Panel macht die Tab-Ansicht Platz',
+    shrunk === fullWidth - 384, `voll=${fullWidth} mit Panel=${shrunk}`);
+  tabs.setPanelOpen(false);
+  check('Nach dem Schliessen nimmt sie wieder die volle Breite',
+    tabs.tabs.get(tabs.activeId).view.getBounds().width === fullWidth);
+
   // --- closing -------------------------------------------------------------
   console.log('\nSchließen');
   tabs.close(idB);

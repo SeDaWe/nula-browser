@@ -961,6 +961,10 @@ function registerIpc() {
   }));
 
   // ---- window controls ----
+  ipcMain.handle('nula:panel', guard(async (_e, open) => {
+    state.tabs?.setPanelOpen(open);
+  }));
+
   ipcMain.handle('nula:window', guard(async (_e, action) => {
     if (!state.win) return;
     if (action === 'minimize') state.win.minimize();
@@ -1101,12 +1105,13 @@ function buildMenu() {
         {
           label: 'Entwicklerwerkzeuge',
           accelerator: 'CmdOrCtrl+Shift+I',
-          click: () => state.win?.webContents.toggleDevTools(),
+          // Abgedockt, sonst liegen sie hinter der nativen Tab-Ansicht.
+          click: () => state.win?.webContents.openDevTools({ mode: 'detach' }),
         },
         {
           label: 'Entwicklerwerkzeuge für die Seite',
           accelerator: 'CmdOrCtrl+Shift+J',
-          click: () => state.tabs?.withActive((wc) => wc.toggleDevTools()),
+          click: () => state.tabs?.withActive((wc) => wc.openDevTools({ mode: 'detach' })),
         },
       ],
     },

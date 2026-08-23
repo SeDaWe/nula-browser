@@ -370,6 +370,9 @@ function openPanel(view) {
   const panel = $('#panel');
   panel.hidden = false;
   requestAnimationFrame(() => panel.classList.add('is-open'));
+  // Der Hauptprozess muss der nativen Tab-Ansicht Platz abziehen, sonst liegt
+  // das Panel dahinter.
+  call(window.nula.panel(true), { silent: true, slowAfterMs: 0 });
   if (ui.panelView === 'api') renderTokens();
   if (ui.panelView === 'settings') renderSettings();
   if (ui.panelView === 'devices') renderDevices();
@@ -378,6 +381,7 @@ function openPanel(view) {
 
 function closePanel() {
   $('#panel').classList.remove('is-open');
+  call(window.nula.panel(false), { silent: true, slowAfterMs: 0 });
 }
 
 function togglePanel(view) {
