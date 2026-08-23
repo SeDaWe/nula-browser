@@ -73,17 +73,10 @@ jobs:
         # --publish never: electron-builder erkennt CI und wuerde sonst selbst
         # nach GitHub veroeffentlichen wollen. Den Release macht der release-Job.
         #
-        # Die Apple-Variablen sind leer, solange die Secrets nicht gesetzt sind;
-        # electron-builder ueberspringt das Signieren dann. Sobald ein
-        # Developer-ID-Zertifikat hinterlegt ist, signiert und notarisiert derselbe
-        # Lauf automatisch, und macOS kann sich danach auch selbst aktualisieren.
+        # Zum Signieren von macOS hier KEINE leeren Apple-Variablen setzen: ein
+        # leeres CSC_LINK behandelt electron-builder als Pfad und bricht mit
+        # "not a file" ab. Wie es richtig geht, steht im README unter "Updates".
         run: npm run dist:${{ matrix.target }} -- --publish never
-        env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: nula-${{ matrix.target }}

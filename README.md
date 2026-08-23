@@ -352,11 +352,20 @@ Zwei Einschränkungen:
 - Im Entwicklungsmodus (`npm start`) wird grundsätzlich nicht gesucht.
 
 Damit macOS sich ebenfalls selbst aktualisiert, braucht es ein **Developer-ID-Zertifikat** von
-Apple (Developer Program, 99 $/Jahr). Der Release-Workflow ist darauf schon vorbereitet: Sind die
-Secrets `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` und
-`APPLE_TEAM_ID` im Repository hinterlegt, signiert und notarisiert derselbe Lauf automatisch, und
-der Mac-Weg schaltet auf den normalen Update-Pfad um. Ohne die Secrets wird das Signieren
-übersprungen, ohne dass etwas bricht.
+Apple (Developer Program, 99 $/Jahr). Dann sind zwei Schritte nötig:
+
+1. Zertifikat als `.p12` exportieren, base64-kodieren und zusammen mit dem Passwort als
+   Repository-Secrets hinterlegen (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`); für die
+   Notarisierung zusätzlich `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` und `APPLE_TEAM_ID`.
+2. Im Bauen-Schritt von `.github/workflows/release.yml` einen `env:`-Block mit genau diesen
+   Variablen ergänzen.
+
+Der zweite Schritt ist Absicht und darf nicht vorweggenommen werden: Ein **leeres** `CSC_LINK`
+behandelt electron-builder als Dateipfad und bricht den macOS-Build mit `not a file` ab. Die
+Variablen dürfen also erst existieren, wenn sie auch gefüllt sind.
+
+Sobald signiert wird, kann in `src/main/updater.js` der macOS-Sonderweg entfallen —
+`autoDownload` darf dann auch dort auf `true` stehen.
 
 ---
 

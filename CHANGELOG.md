@@ -10,10 +10,10 @@ Alle nennenswerten Änderungen an Nula.
   Anwenden — gesucht wird über die GitHub-API und damit plattformunabhängig. Nula lädt auf dem
   Mac deshalb nichts herunter, meldet aber die gefundene Version und öffnet auf Knopfdruck die
   Release-Seite
-- Der Release-Workflow nimmt Apple-Signatur-Secrets entgegen (`MAC_CSC_LINK`,
-  `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). Fehlen
-  sie, wird das Signieren übersprungen; sind sie da, signiert und notarisiert derselbe Lauf, und
-  macOS kann sich anschließend wie Windows selbst aktualisieren
+- Das README beschreibt, wie sich das Signieren für macOS nachrüsten lässt, damit sich der Mac
+  danach wie Windows selbst aktualisiert — inklusive der Falle, dass ein **leeres** `CSC_LINK`
+  den macOS-Build mit `not a file` abbrechen lässt und die Variablen deshalb erst gesetzt werden
+  dürfen, wenn sie auch gefüllt sind
 
 ## [2.5.0] - 2026-08-23
 
