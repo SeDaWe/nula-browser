@@ -342,6 +342,10 @@ Vault liegt nur im Arbeitsspeicher, und der Updater ersetzt den laufenden Prozes
 normalen Beenden-Weg zu nehmen. Klappt das Wegschreiben nicht, bricht Nula das Update ab und sagt
 das, statt Daten zu verlieren.
 
+Der Windows-Installer fragt beim Einrichten danach; voreingestellt ist „an". Die Antwort gilt ab
+dem nächsten Start, lässt sich aber jederzeit in den Einstellungen ändern — und ein stilles
+Update rührt sie nicht an.
+
 > **Jede Abfrage geht an GitHub** und verrät dabei die IP dieser Installation — für einen Browser
 > mit diesem Anspruch ist das erwähnenswert. Der Schalter **Automatisch nach Updates suchen** in
 > den Einstellungen schaltet das ab; danach sucht Nula nur noch, wenn du den Knopf drückst. Die

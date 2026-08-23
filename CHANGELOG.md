@@ -2,6 +2,16 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.9.0] - 2026-08-23
+
+### Neu
+- **Der Windows-Installer fragt, ob Nula selbst nach Updates suchen soll** (voreingestellt: ja).
+  Die Antwort landet neben der EXE und wird beim Start übernommen, sofern sie neuer ist als die
+  vorhandene Konfiguration — eine frische Installation gewinnt also gegen eine alte Einstellung,
+  eine spätere Änderung in den Einstellungen ebenso gegen die Installer-Vorgabe
+- Ein stilles Update schreibt die Vorgabe **nicht**. Sonst würde jede automatische Aktualisierung
+  die zuletzt getroffene Wahl wieder überschreiben
+
 ## [2.8.0] - 2026-08-23
 
 ### Korrekturen

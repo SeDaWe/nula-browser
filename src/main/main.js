@@ -147,6 +147,31 @@ function pushTabState(payload) {
   chromeSend('nula:tabs', payload || (state.tabs ? state.tabs.serialize() : { tabs: [], activeId: null }));
 }
 
+/*
+ * Der Installer fragt beim Einrichten, ob Nula selbst nach Updates suchen soll,
+ * und legt die Antwort neben die EXE. Sie wird nur angewendet, wenn sie neuer
+ * ist als die Konfiguration: eine frische Installation gewinnt damit gegen eine
+ * alte Einstellung, eine spaetere Aenderung in den Einstellungen aber ebenso
+ * gegen die Installer-Vorgabe. Stille Updates schreiben die Datei gar nicht.
+ */
+function applyInstallerUpdateChoice() {
+  if (process.platform !== 'win32') return;
+  try {
+    const flag = path.join(path.dirname(app.getPath('exe')), 'auto-update.default');
+    const flagTime = fs.statSync(flag).mtimeMs;
+    let configTime = 0;
+    try {
+      configTime = fs.statSync(config.CONFIG_FILE).mtimeMs;
+    } catch {
+      /* noch keine Konfiguration, dann zaehlt die Vorgabe in jedem Fall */
+    }
+    if (flagTime <= configTime) return;
+    config.save({ autoUpdate: fs.readFileSync(flag, 'utf8').trim() === '1' });
+  } catch {
+    /* keine Vorgabe vom Installer, dann bleibt es bei der Konfiguration */
+  }
+}
+
 function pushUpdateStatus(payload) {
   chromeSend('nula:update', payload || updater.getStatus());
 }
@@ -980,6 +1005,7 @@ if (!singleInstance) {
     state.browseSession = createBrowseSession();
     registerIpc();
     state.win = createWindow();
+    applyInstallerUpdateChoice();
     updater.start({
       onStatus: pushUpdateStatus,
       enabled: config.load().autoUpdate !== false,
