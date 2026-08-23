@@ -9,11 +9,6 @@ on:
     branches: [main]
     paths: ['package.json']
   workflow_dispatch:
-    inputs:
-      macos:
-        description: 'macOS mitbauen (kostet 10x Runner-Minuten)'
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -60,6 +55,9 @@ jobs:
           - os: ubuntu-latest
             target: linux
             test: false
+          - os: macos-latest
+            target: mac
+            test: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -82,34 +80,14 @@ jobs:
           path: |
             dist/*.exe
             dist/*.AppImage
-          if-no-files-found: error
-          retention-days: 7
-
-  build-macos:
-    needs: check
-    if: needs.check.outputs.needed == 'true' && inputs.macos
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: npm run dist:mac -- --publish never
-      - uses: actions/upload-artifact@v4
-        with:
-          name: nula-mac
-          path: |
             dist/*.dmg
             dist/*.zip
+            dist/latest*.yml
           if-no-files-found: error
           retention-days: 7
 
   release:
     needs: [check, build]
-    # Auch dann veroeffentlichen, wenn der optionale macOS-Job gar nicht lief.
-    if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -134,11 +112,17 @@ jobs:
             echo ""
             echo "---"
             echo ""
-            echo "**Windows:** \`Nula-Setup-$VERSION-x64.exe\` installiert mit Startmenue-Eintrag und Uninstaller."
-            echo "\`Nula-$VERSION-x64-portable.exe\` laeuft ohne Installation direkt los."
+            echo "| Datei | System |"
+            echo "|---|---|"
+            echo "| \`Nula-Setup-$VERSION-x64.exe\` | Windows, Installer mit Startmenue und Uninstaller |"
+            echo "| \`Nula-$VERSION-x64-portable.exe\` | Windows, eine Datei ohne Installation |"
+            echo "| \`Nula-$VERSION-universal.dmg\` | macOS, Intel und Apple Silicon |"
+            echo "| \`Nula-$VERSION.AppImage\` | Linux |"
             echo ""
-            echo "Die Dateien sind nicht signiert. Windows SmartScreen meldet deshalb einen"
-            echo "unbekannten Herausgeber: \"Weitere Informationen\" und dann \"Trotzdem ausfuehren\"."
+            echo "Keine der Dateien ist signiert. Windows SmartScreen meldet einen unbekannten"
+            echo "Herausgeber: \"Weitere Informationen\" und dann \"Trotzdem ausfuehren\"."
+            echo "macOS blockiert den ersten Start ebenfalls: im Finder Rechtsklick auf Nula und"
+            echo "dann \"Oeffnen\", danach startet die App normal."
           } >> notes.md
           cat notes.md
       - name: Veroeffentlichen

@@ -14,6 +14,7 @@ const ui = {
   status: { locked: true, sync: { state: 'idle' }, blocked: 0 },
   omniDirty: false,
   panelView: 'bookmarks',
+  version: null,
   bmFilter: '',
 };
 
@@ -414,6 +415,31 @@ async function submitUnlock(e) {
 // Wiring
 // ---------------------------------------------------------------------------
 
+/** Zeigt an, wo die Selbstaktualisierung gerade steht. */
+function renderUpdate(update) {
+  if (!update) return;
+  const text = $('#update-status');
+  const install = $('#update-install');
+  const check = $('#update-check');
+  const version = ui.version ? `Version ${ui.version}` : 'Diese Version';
+
+  const messages = {
+    dev: 'Im Entwicklungsmodus wird nicht nach Updates gesucht.',
+    off: `${version} · automatische Suche ist aus`,
+    idle: `${version} · noch nicht geprüft`,
+    checking: 'Suche nach Updates …',
+    current: `${version} · aktuell`,
+    downloading: `Version ${update.version || ''} wird geladen … ${update.percent || 0} %`,
+    ready: `Version ${update.version || ''} ist bereit`,
+    error: update.detail || 'Die Update-Suche ist fehlgeschlagen.',
+  };
+  text.textContent = messages[update.state] || messages.idle;
+  text.classList.toggle('is-error', update.state === 'error');
+
+  install.hidden = update.state !== 'ready';
+  check.disabled = update.state === 'checking' || update.state === 'downloading';
+}
+
 function wire() {
   // Window controls
   $$('[data-win]').forEach((b) => b.addEventListener('click', () => window.nula.window(b.dataset.win)));
@@ -493,6 +519,28 @@ function wire() {
   $('#set-theme').addEventListener('change', (e) => {
     document.documentElement.dataset.theme = e.target.checked ? 'light' : 'dark';
     window.nula.settings.set({ theme: e.target.checked ? 'light' : 'dark' });
+  });
+  $('#update-check').addEventListener('click', async () => {
+    const btn = $('#update-check');
+    btn.disabled = true;
+    const res = await call(window.nula.update.check());
+    btn.disabled = false;
+    if (res.ok && res.data) renderUpdate(res.data);
+  });
+  $('#update-install').addEventListener('click', async () => {
+    const btn = $('#update-install');
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Wird vorbereitet …';
+    const res = await call(window.nula.update.install());
+    // Klappt es, ist das Fenster gleich weg. Sonst zuruecksetzen.
+    if (!res.ok) {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Neu starten und installieren';
+    }
+  });
+  $('#update-auto').addEventListener('change', async (e) => {
+    const res = await call(window.nula.update.setEnabled(e.target.checked));
+    if (res.ok && res.data) renderUpdate(res.data);
   });
   $('#backup-export').addEventListener('click', async () => {
     const btn = $('#backup-export');
@@ -643,6 +691,7 @@ function subscribe() {
     if ($('#panel').classList.contains('is-open') && ui.panelView === 'settings') renderSettings();
   });
 
+  window.nula.on('update', (payload) => renderUpdate(payload));
   window.nula.on('locked', (payload) => {
     ui.tabs = [];
     ui.activeId = null;
@@ -672,6 +721,9 @@ function subscribe() {
   const res = await call(window.nula.bootstrap(), { silent: true });
   if (res.ok) {
     document.body.dataset.platform = res.data.platform;
+    ui.version = res.data.version || null;
+    $('#update-auto').checked = res.data.autoUpdate !== false;
+    renderUpdate(res.data.update);
     $('#lock-remember').checked = res.data.rememberServerUrl !== false;
     if (res.data.serverUrl) {
       $('#lock-server').value = res.data.serverUrl;

@@ -161,6 +161,32 @@
           <p>Verlauf, Cookies und Cache liegen ausschließlich im Arbeitsspeicher und werden beim Beenden nicht geschrieben.</p>
         </div>
 
+        <div class="backup-card update-card">
+          <div class="backup-copy">
+            <span class="backup-icon"><i class="ph ph-arrow-circle-up" aria-hidden="true"></i></span>
+            <div>
+              <strong>Updates</strong>
+              <p id="update-status">Version wird geladen …</p>
+            </div>
+          </div>
+          <button class="btn-ghost" id="update-check">
+            <i class="ph ph-arrows-clockwise" aria-hidden="true"></i>
+            <span>Nach Updates suchen</span>
+          </button>
+          <button class="btn-primary" id="update-install" hidden>
+            <i class="ph ph-arrow-circle-up" aria-hidden="true"></i>
+            <span>Neu starten und installieren</span>
+          </button>
+          <div class="field switch-field">
+            <div>
+              <label for="update-auto">Automatisch nach Updates suchen</label>
+              <p class="hint">Beim Start und alle sechs Stunden.</p>
+            </div>
+            <input type="checkbox" id="update-auto" class="switch" />
+          </div>
+          <p class="backup-hint">Jede Abfrage geht an GitHub und verrät dabei die IP dieser Installation. Abgeschaltet sucht Nula nie von selbst; der Knopf oben funktioniert weiterhin.</p>
+        </div>
+
         <div class="backup-card">
           <div class="backup-copy">
             <span class="backup-icon"><i class="ph ph-file-lock" aria-hidden="true"></i></span>
@@ -202,6 +228,15 @@
   <!-- ================= Lock screen ================= -->
   <div id="lock" class="lock">
     <div class="lock-bg" aria-hidden="true"></div>
+
+    <!-- Der Sperrbildschirm liegt ueber der Chrome-Leiste und damit ueber deren
+         Fensterknoepfen. Ohne eigene waere das Fenster hier nur per Alt+F4 zu
+         schliessen. data-win reicht, app.js verdrahtet alle davon automatisch. -->
+    <div class="window-controls lock-window-controls">
+      <button class="win-btn" data-win="minimize" aria-label="Minimieren"><i class="ph ph-minus" aria-hidden="true"></i></button>
+      <button class="win-btn" data-win="maximize" aria-label="Maximieren"><i class="ph ph-square" aria-hidden="true"></i></button>
+      <button class="win-btn danger" data-win="close" aria-label="Schließen"><i class="ph ph-x" aria-hidden="true"></i></button>
+    </div>
 
     <section class="lock-story">
       <div class="lock-word">

@@ -1,7 +1,7 @@
 {
   "name": "nula-browser",
   "productName": "Nula",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "Privacy browser that leaves nothing on the machine and syncs tabs and bookmarks end-to-end encrypted through your own server.",
   "main": "src/main/main.js",
   "author": "SeDaWe",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@phosphor-icons/web": "^2.1.2",
+    "electron-updater": "^6.6.2",
     "hash-wasm": "^4.12.0"
   },
   "devDependencies": {
@@ -26,6 +27,13 @@
   "build": {
     "appId": "net.nula.browser",
     "productName": "Nula",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SeDaWe",
+        "repo": "nula-browser"
+      }
+    ],
     "files": [
       "src/**/*",
       "package.json",
@@ -41,8 +49,8 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        { "target": "dmg", "arch": ["universal"] },
+        { "target": "zip", "arch": ["universal"] }
       ],
       "category": "public.app-category.productivity",
       "artifactName": "Nula-${version}-${arch}.${ext}",

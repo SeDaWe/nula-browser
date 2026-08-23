@@ -23,7 +23,7 @@ const problems = [];
 
 // Stub the IPC surface so the renderer boots exactly as it would in the app.
 const STUBS = {
-  'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'SMOKE', locked: true, platform: 'win32', version: '2.3.0' } },
+  'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'SMOKE', locked: true, platform: 'win32', version: '2.5.0', autoUpdate: true, update: { state: 'current', version: null, detail: null, percent: 0 } } },
   'nula:activity': { ok: true, data: null },
 };
 

@@ -2,3 +2,13 @@ node_modules/
 dist/
 tools/shots/
 tools/*.log
+
+# Der eigene Datenexport der App. Er enthaelt den kompletten Vault samt privatem
+# Inbox-Schluessel, und der Speichern-Dialog startet leicht im Projektordner.
+*.nula-backup.json
+
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db

@@ -25,6 +25,10 @@ const DEFAULTS = {
   rememberServerUrl: true,
   deviceId: null,
   deviceName: os.hostname(),
+  // Update-Abfragen gehen an GitHub und verraten dabei die IP dieser
+  // Installation. Die Einstellung liegt deshalb hier und nicht im Vault: nur so
+  // laesst sie sich auch im gesperrten Zustand beachten.
+  autoUpdate: true,
 };
 
 let cache = null;

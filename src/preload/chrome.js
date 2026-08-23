@@ -42,6 +42,12 @@ contextBridge.exposeInMainWorld('nula', {
     now: () => invoke('nula:sync:now'),
   },
 
+  update: {
+    check: () => invoke('nula:update:check'),
+    install: () => invoke('nula:update:install'),
+    setEnabled: (on) => invoke('nula:update:setEnabled', on),
+  },
+
   tokens: {
     list: () => invoke('nula:tokens:list'),
     create: (name) => invoke('nula:tokens:create', name),
@@ -56,6 +62,7 @@ contextBridge.exposeInMainWorld('nula', {
       vault: 'nula:vault',
       status: 'nula:status',
       locked: 'nula:locked',
+      update: 'nula:update',
       newtab: 'nula:cmd:newtab',
       closetab: 'nula:cmd:closetab',
       focusomni: 'nula:cmd:focusomni',

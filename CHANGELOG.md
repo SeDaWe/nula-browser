@@ -2,6 +2,33 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.5.0] - 2026-08-23
+
+### Neu
+- **Nula aktualisiert sich selbst.** Beim Start und alle sechs Stunden wird der Release-Feed
+  geprüft, eine gefundene Version im Hintergrund geladen und unter **Einstellungen → Updates**
+  gemeldet. Installiert wird ausschließlich auf Knopfdruck
+- Vor dem Update-Neustart wird der Vault weggeschrieben. `quitAndInstall()` ersetzt den Prozess
+  und geht am normalen Beenden-Weg vorbei; ohne diesen Schritt wäre alles seit dem letzten Push
+  verloren, weil der Vault nur im Arbeitsspeicher liegt. Scheitert das Sichern, bricht das
+  Update ab
+- Schalter **Automatisch nach Updates suchen**. Jede Abfrage verrät GitHub die IP dieser
+  Installation, deshalb ist sie abschaltbar. Die Einstellung liegt in `config.json` und nicht im
+  Vault, sonst wäre sie im gesperrten Zustand nicht lesbar
+- macOS wird jetzt bei jedem Release mitgebaut, als eine universelle `.dmg` für Intel und Apple
+  Silicon
+
+### Korrekturen
+- **Im gesperrten Zustand fehlten die Fensterknöpfe.** Der Sperrbildschirm liegt als Overlay
+  (`z-index: 100`) über der Chrome-Leiste (`z-index: 10`) und verdeckte damit Minimieren,
+  Maximieren und Schließen vollständig — auf Windows und Linux blieb dort nur Alt+F4. Der
+  Sperrbildschirm hat jetzt einen eigenen Satz Knöpfe
+- Der Screenshot-Test trug die echte Sync-Adresse und den echten Gerätenamen des Entwicklers als
+  Demodaten; beides sind jetzt Platzhalter wie im übrigen Projekt
+- `.gitignore` schließt `*.nula-backup.json` aus. Das ist die Exportdatei der App selbst, sie
+  enthält den kompletten Vault samt privatem Inbox-Schlüssel, und der Speichern-Dialog startet
+  leicht im Projektordner
+
 ## [2.4.1] - 2026-08-23
 
 Reine Verpackung. Am Programm selbst ändert sich nichts.

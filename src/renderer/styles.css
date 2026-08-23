@@ -238,7 +238,19 @@ body[data-platform="darwin"] .tabstrip { padding-left: 84px; }
 /* -------------------------------------------------------- window buttons -- */
 
 .window-controls { display: flex; align-self: stretch; -webkit-app-region: no-drag; }
+/* Auf macOS zeichnet das System seine Ampel ueber den Inhalt, auch ueber den
+   Sperrbildschirm. Eigene Knoepfe waeren dort doppelt. */
 body[data-platform="darwin"] .window-controls { display: none; }
+
+/* Der Sperrbildschirm ist ein Overlay ueber der ganzen Chrome-Leiste, deshalb
+   braucht er seinen eigenen Satz Knoepfe, oben rechts und ueber dem Verlauf. */
+.lock-window-controls {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: var(--strip-h);
+  z-index: 1;
+}
 
 .win-btn {
   width: 44px;
@@ -853,6 +865,14 @@ label.check-row {
   width: 100%;
   height: 34px;
 }
+
+.update-card .switch-field {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.update-card .btn-primary[hidden] { display: none; }
 
 .backup-card .btn-ghost {
   display: inline-flex;

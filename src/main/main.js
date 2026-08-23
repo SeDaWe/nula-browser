@@ -25,6 +25,7 @@ const { SyncEngine } = require('./sync');
 const { importableVault, mergeBackupVault, newId } = require('./vault');
 const blocker = require('./blocker');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
+const updater = require('./updater');
 const { resolveInput } = require('./urls');
 
 // A final push must not keep a closing window or a locking session waiting on an
@@ -144,6 +145,10 @@ function pushVaultState() {
 
 function pushTabState(payload) {
   chromeSend('nula:tabs', payload || (state.tabs ? state.tabs.serialize() : { tabs: [], activeId: null }));
+}
+
+function pushUpdateStatus(payload) {
+  chromeSend('nula:update', payload || updater.getStatus());
 }
 
 function pushStatus() {
@@ -760,6 +765,8 @@ function registerIpc() {
       locked: state.locked,
       platform: process.platform,
       version: app.getVersion(),
+      autoUpdate: cfg.autoUpdate !== false,
+      update: updater.getStatus(),
     };
   }));
 
@@ -868,6 +875,33 @@ function registerIpc() {
   ipcMain.handle('nula:backup:export', guard(async () => exportAllData()));
   ipcMain.handle('nula:backup:import', guard(async () => importAllData()));
 
+  // ---- updates ----
+  ipcMain.handle('nula:update:check', guard(async () => updater.check({ manual: true })));
+
+  ipcMain.handle('nula:update:setEnabled', guard(async (_e, on) => {
+    config.save({ autoUpdate: !!on });
+    updater.setEnabled(!!on);
+    return updater.getStatus();
+  }));
+
+  ipcMain.handle('nula:update:install', guard(async () => {
+    // quitAndInstall() ersetzt den Prozess und geht dabei an before-quit und am
+    // Fenster-close vorbei. Der Vault muss also HIER weg, sonst ist alles seit
+    // dem letzten Push verloren - er liegt nur im Arbeitsspeicher.
+    if (!state.locked && state.sync) {
+      captureTabsIntoVault();
+      await state.sync.flush(FLUSH_TIMEOUT_MS).catch(() => {});
+      if (state.sync.dirty) {
+        throw new Error('Der Vault konnte nicht gesichert werden. Update abgebrochen.');
+      }
+      state.sync.stop();
+    }
+    // Verhindert, dass die Quit-Handler ein zweites Mal flushen wollen.
+    state.quitting = true;
+    updater.install();
+    return { installing: true };
+  }));
+
   // ---- sync ----
   ipcMain.handle('nula:sync:now', guard(async () => {
     requireUnlocked();
@@ -940,6 +974,10 @@ if (!singleInstance) {
     state.browseSession = createBrowseSession();
     registerIpc();
     state.win = createWindow();
+    updater.start({
+      onStatus: pushUpdateStatus,
+      enabled: config.load().autoUpdate !== false,
+    });
     pushStatus();
 
     globalShortcut.register('CommandOrControl+Shift+L', () => lock('shortcut'));

@@ -20,6 +20,7 @@ Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 - [Installation unter Debian 13](#installation-unter-debian-13)
 - [Installer bauen](#installer-bauen)
 - [Releases](#releases)
+- [Updates](#updates)
 - [Tastenkürzel](#tastenkürzel)
 - [Was beim Sperren passiert](#was-beim-sperren-passiert)
 - [Sync-Verhalten](#sync-verhalten)
@@ -211,10 +212,10 @@ Release. Der Auslöser ist bewusst die Versionsnummer, nicht jeder Push:
 3. Der Workflow prüft, ob es das Tag `v<version>` schon gibt. Wenn ja, endet er sofort und
    verbraucht keine Runner-Minuten. Wenn nein, baut er, testet und veröffentlicht
 
-Gebaut werden Windows und Linux. Der Windows-Job lässt vorher die Testsuite laufen, sodass kein
-Release entsteht, dessen Tests rot sind. macOS bleibt außen vor, weil macOS-Runner in privaten
-Repositories das Zehnfache an Minuten kosten; bei Bedarf lässt es sich unter **Actions → Release
-→ Run workflow** einzeln zuschalten.
+Gebaut werden Windows, macOS und Linux. Der Windows-Job lässt vorher die Testsuite laufen,
+sodass kein Release entsteht, dessen Tests rot sind. Für öffentliche Repositories sind die
+Standard-Runner aller drei Plattformen kostenlos, deshalb läuft macOS immer mit — als eine
+universelle `.dmg`, die auf Intel und Apple Silicon startet.
 
 Die Release-Notes zieht der Workflow aus dem Changelog-Abschnitt der jeweiligen Version. Ein
 fehlgeschlagener Lauf lässt sich über **Run workflow** wiederholen, ohne die Version zu ändern.
@@ -321,6 +322,33 @@ Vor dem Schreiben fragt Nula, ob auch die **Einstellungen** aus dem Backup gelte
 „Nur Daten übernehmen" lässt Suchmaschine, Autolock und Design unverändert. Nicht importiert
 werden Geräte-ID und Gerätename: Die Geräte-ID identifiziert genau dieses Gerät und darf
 nicht doppelt vergeben werden. Nach dem Zusammenführen lädt Nula den Vault sofort hoch.
+
+---
+
+## Updates
+
+Nula prüft beim Start und danach alle sechs Stunden, ob im
+[Release-Feed](https://github.com/SeDaWe/nula-browser/releases) eine neuere Version liegt. Findet
+es eine, lädt es sie im Hintergrund und meldet unter **Einstellungen → Updates**, dass sie bereit
+ist. Installiert wird erst, wenn du auf **Neu starten und installieren** klickst.
+
+Vor dem Neustart schreibt Nula den Vault noch weg. Das ist nicht optional, sondern notwendig: Der
+Vault liegt nur im Arbeitsspeicher, und der Updater ersetzt den laufenden Prozess, ohne den
+normalen Beenden-Weg zu nehmen. Klappt das Wegschreiben nicht, bricht Nula das Update ab und sagt
+das, statt Daten zu verlieren.
+
+> **Jede Abfrage geht an GitHub** und verrät dabei die IP dieser Installation — für einen Browser
+> mit diesem Anspruch ist das erwähnenswert. Der Schalter **Automatisch nach Updates suchen** in
+> den Einstellungen schaltet das ab; danach sucht Nula nur noch, wenn du den Knopf drückst. Die
+> Einstellung liegt in `~/.nula/config.json` statt im Vault, weil sie sonst im gesperrten Zustand
+> nicht beachtet werden könnte.
+
+Zwei Einschränkungen:
+
+- **macOS aktualisiert sich nicht selbst.** Squirrel.Mac verlangt eine signierte App, und Nula ist
+  nicht signiert. Nula meldet das als Fehler statt still zu scheitern; das Update muss dort von
+  Hand aus den Releases geladen werden.
+- Im Entwicklungsmodus (`npm start`) wird grundsätzlich nicht gesucht.
 
 ---
 
