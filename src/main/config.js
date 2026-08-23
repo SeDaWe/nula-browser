@@ -29,6 +29,11 @@ const DEFAULTS = {
   // Installation. Die Einstellung liegt deshalb hier und nicht im Vault: nur so
   // laesst sie sich auch im gesperrten Zustand beachten.
   autoUpdate: true,
+  // Ob gegen den gemerkten Server schon einmal erfolgreich entsperrt wurde.
+  // Dann verlangt er keinen Setup-Code mehr, und das Feld darf aus dem Weg.
+  // Der Merker gilt nur zusammen mit einer gemerkten Adresse: ohne sie ist
+  // nicht bekannt, für welchen Server er gälte.
+  setupDone: false,
 };
 
 let cache = null;

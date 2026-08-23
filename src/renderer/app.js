@@ -51,12 +51,54 @@ function hostOf(url) {
   }
 }
 
-async function call(promise, { silent = false } = {}) {
+/*
+ * Ein Fehler im Renderer blieb bisher vollständig unsichtbar: kein Menüeintrag
+ * für die Entwicklerwerkzeuge, keine Meldung im Fenster. Genau deshalb sah ein
+ * kaputter Render-Durchlauf aus wie "es passiert einfach nichts".
+ */
+function reportRendererError(what) {
+  const message = what?.message || String(what || 'Unbekannter Fehler');
+  console.error('[nula] Renderer-Fehler:', what);
+  try {
+    toast(`Fehler in der Oberfläche: ${message}`, true);
+  } catch {
+    /* Wenn selbst der Toast nicht geht, bleibt nur die Konsole. */
+  }
+}
+
+window.addEventListener('error', (e) => reportRendererError(e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => reportRendererError(e.reason));
+
+/**
+ * Führt einen Handler aus, ohne dass sein Scheitern die folgenden mitreißt.
+ * Ein IPC-Ereignis ruft mehrere Render-Funktionen nacheinander auf; ohne diese
+ * Klammer beendet die erste Ausnahme den ganzen Durchlauf, und zwar bei jedem
+ * weiteren Ereignis erneut.
+ */
+function safely(name, fn) {
+  return (...args) => {
+    try {
+      return fn(...args);
+    } catch (err) {
+      reportRendererError(new Error(`${name}: ${err?.message || err}`));
+      return undefined;
+    }
+  };
+}
+
+async function call(promise, { silent = false, slowAfterMs = 8000 } = {}) {
+  // Antwortet der Hauptprozess gar nicht, gab es bisher keinerlei Rückmeldung.
+  const slow =
+    slowAfterMs > 0
+      ? setTimeout(() => toast('Der Hauptprozess antwortet nicht.', true), slowAfterMs)
+      : null;
   let res;
   try {
     res = await promise;
   } catch (err) {
     res = { ok: false, error: err?.message || 'Interner Fehler' };
+  } finally {
+    if (slow) clearTimeout(slow);
   }
   if (!res.ok && !silent) toast(res.error, true);
   return res;
@@ -226,7 +268,9 @@ function renderDevices() {
 
   const groups = new Map();
   for (const tab of ui.remoteTabs) {
-    const key = tab.deviceId === 'inbox' ? 'Über die API hinzugefügt' : `Gerät ${tab.deviceId.slice(0, 6)}`;
+    // Ein Tab ohne deviceId liess hier bisher die ganze Render-Kette auflaufen.
+    const device = typeof tab.deviceId === 'string' && tab.deviceId ? tab.deviceId : 'unbekannt';
+    const key = device === 'inbox' ? 'Über die API hinzugefügt' : `Gerät ${device.slice(0, 6)}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(tab);
   }
@@ -345,6 +389,13 @@ function togglePanel(view) {
 // Lock screen
 // ---------------------------------------------------------------------------
 
+/** Blendet das Setup-Code-Feld wieder ein, etwa zur Schlüsselreparatur. */
+function revealSetupField(focus) {
+  $('#lock-setup-field').hidden = false;
+  $('#lock-setup-toggle').hidden = true;
+  if (focus) $('#lock-setup-token').focus();
+}
+
 function showLock(message) {
   $('#lock').classList.remove('is-hidden');
   $('#lock-pass').value = '';
@@ -401,7 +452,10 @@ async function submitUnlock(e) {
   if (!res.ok) {
     err.textContent = res.error;
     err.hidden = false;
-    $('#lock-pass').select();
+    // Verlangt der Server den Code doch, nuetzt eine blosse Meldung nichts,
+    // solange das Feld eingeklappt ist.
+    if (/Setup-Code/i.test(res.error || '')) revealSetupField(true);
+    else $('#lock-pass').select();
     return;
   }
 
@@ -553,7 +607,7 @@ function wire() {
     const label = btn.querySelector('span');
     btn.disabled = true;
     label.textContent = 'Backup wird erstellt';
-    const res = await call(window.nula.backup.exportAll());
+    const res = await call(window.nula.backup.exportAll(), { slowAfterMs: 0 });
     btn.disabled = false;
     label.textContent = 'Backup exportieren';
     if (!res.ok || res.data?.canceled) return;
@@ -568,7 +622,7 @@ function wire() {
     const label = btn.querySelector('span');
     btn.disabled = true;
     label.textContent = 'Backup wird gelesen';
-    const res = await call(window.nula.backup.importAll());
+    const res = await call(window.nula.backup.importAll(), { slowAfterMs: 0 });
     btn.disabled = false;
     label.textContent = 'Backup importieren';
     if (!res.ok || res.data?.canceled) return;
@@ -611,6 +665,7 @@ function wire() {
 
   // Lock screen
   $('#lock-form').addEventListener('submit', submitUnlock);
+  $('#lock-setup-toggle').addEventListener('click', () => revealSetupField(true));
   $('#lock-remember').addEventListener('change', updateRememberHint);
   $('#btn-reveal').addEventListener('click', () => {
     const input = $('#lock-pass');
@@ -669,14 +724,14 @@ function focusOmni() {
 // ---------------------------------------------------------------------------
 
 function subscribe() {
-  window.nula.on('tabs', (payload) => {
+  window.nula.on('tabs', safely('tabs', (payload) => {
     ui.tabs = payload.tabs;
     ui.activeId = payload.activeId;
     renderTabs();
     renderToolbar();
-  });
+  }));
 
-  window.nula.on('vault', (payload) => {
+  window.nula.on('vault', safely('vault', (payload) => {
     ui.bookmarks = payload.bookmarks || [];
     ui.remoteTabs = payload.remoteTabs || [];
     ui.settings = payload.settings || {};
@@ -684,9 +739,9 @@ function subscribe() {
     renderDevices();
     renderSettings();
     renderToolbar();
-  });
+  }));
 
-  window.nula.on('status', (payload) => {
+  window.nula.on('status', safely('status', (payload) => {
     ui.status = payload;
     const dot = $('#sync-dot');
     const label = $('#sync-label');
@@ -695,10 +750,10 @@ function subscribe() {
     label.textContent = map[payload.sync?.state] || 'Bereit';
     $('#btn-sync').title = payload.sync?.detail || 'Jetzt synchronisieren';
     if ($('#panel').classList.contains('is-open') && ui.panelView === 'settings') renderSettings();
-  });
+  }));
 
-  window.nula.on('update', (payload) => renderUpdate(payload));
-  window.nula.on('locked', (payload) => {
+  window.nula.on('update', safely('update', (payload) => renderUpdate(payload)));
+  window.nula.on('locked', safely('locked', (payload) => {
     ui.tabs = [];
     ui.activeId = null;
     ui.bookmarks = [];
@@ -707,7 +762,7 @@ function subscribe() {
     renderToolbar();
     closePanel();
     showLock(payload?.reason === 'auto' ? 'Automatisch gesperrt nach Inaktivität.' : null);
-  });
+  }));
 
   window.nula.on('newtab', () => call(window.nula.tab.create()).then(focusOmni));
   window.nula.on('closetab', () => ui.activeId && call(window.nula.tab.close(ui.activeId)));
@@ -728,6 +783,11 @@ function subscribe() {
   if (res.ok) {
     document.body.dataset.platform = res.data.platform;
     ui.version = res.data.version || null;
+    // Wer sich hier schon einmal angemeldet hat, braucht den Setup-Code nicht
+    // mehr. Er bleibt über den Link erreichbar, falls doch.
+    const setupDone = res.data.setupDone === true;
+    $('#lock-setup-field').hidden = setupDone;
+    $('#lock-setup-toggle').hidden = !setupDone;
     $('#update-auto').checked = res.data.autoUpdate !== false;
     renderUpdate(res.data.update);
     $('#lock-remember').checked = res.data.rememberServerUrl !== false;

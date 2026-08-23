@@ -47,7 +47,7 @@ function resolveInput(input, settings) {
 }
 
 function search(query, settings) {
-  const engine = SEARCH_ENGINES[settings?.searchEngine] || SEARCH_ENGINES.duckduckgo;
+  const engine = SEARCH_ENGINES[settings?.searchEngine] || SEARCH_ENGINES.google;
   return engine.replace('%s', encodeURIComponent(query));
 }
 

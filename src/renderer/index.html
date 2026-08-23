@@ -290,11 +290,15 @@
           </label>
         </div>
 
-        <div class="field">
+        <button type="button" class="link-btn" id="lock-setup-toggle" hidden>
+          Setup-Code eingeben
+        </button>
+
+        <div class="field" id="lock-setup-field">
           <label for="lock-setup-token">Setup-Code <span class="optional">(Einrichtung oder Schlüsselreparatur)</span></label>
           <input id="lock-setup-token" type="password" autocomplete="off"
                  placeholder="Wert aus NULA_SETUP_TOKEN" />
-          <p class="hint">Wird nur zur einmaligen Kontoeinrichtung gesendet und nie gespeichert.</p>
+          <p class="hint">Wird nur zur Kontoeinrichtung gesendet und nie gespeichert.</p>
         </div>
 
         <div class="field">

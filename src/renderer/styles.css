@@ -244,6 +244,20 @@ body[data-platform="darwin"] .window-controls { display: none; }
 
 /* Der Sperrbildschirm ist ein Overlay ueber der ganzen Chrome-Leiste, deshalb
    braucht er seinen eigenen Satz Knoepfe, oben rechts und ueber dem Verlauf. */
+.link-btn {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11.5px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link-btn:hover { color: var(--accent-dim); }
+.link-btn[hidden] { display: none; }
+
 .lock-window-controls {
   position: absolute;
   top: 0;

@@ -82,7 +82,9 @@ npm start
 ```
 
 **3. Im Sperrbildschirm** die öffentliche Server-Adresse, ein Master-Passwort und beim ersten
-Mal zusätzlich den Setup-Code aus der Server-`.env` eintragen. Der Code wird nicht gespeichert
+Mal zusätzlich den Setup-Code aus der Server-`.env` eintragen. Nach der ersten erfolgreichen
+Anmeldung verschwindet das Setup-Feld, solange die Adresse gemerkt wird; über **Setup-Code
+eingeben** ist es weiter erreichbar. Der Code wird nicht gespeichert
 und später nur erneut gebraucht, falls eine Inbox-Identität bewusst repariert werden muss.
 Auf jedem weiteren Gerät genügen dieselbe Adresse und dasselbe Passwort, und alles ist da.
 

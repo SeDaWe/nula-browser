@@ -418,7 +418,7 @@ async function connectAndUnlock({ serverUrl, password, setupToken, rememberUrl }
     // Only the address is optional here. The device id has to persist either way,
     // otherwise every start would look like a new device and pile up stale tabs.
     const remember = rememberUrl !== false;
-    config.save({ serverUrl: remember ? url : null, rememberServerUrl: remember });
+    config.save({ serverUrl: remember ? url : null, rememberServerUrl: remember, setupDone: remember });
     config.ensureDeviceId();
 
     state.api = api;
@@ -761,6 +761,7 @@ function registerIpc() {
     return {
       serverUrl: cfg.serverUrl,
       rememberServerUrl: cfg.rememberServerUrl !== false,
+      setupDone: cfg.setupDone === true,
       deviceName: cfg.deviceName,
       locked: state.locked,
       platform: process.platform,
@@ -800,7 +801,10 @@ function registerIpc() {
   ipcMain.handle('nula:tab:navigate', guard(async (_e, { id, input }) => {
     requireUnlocked();
     const target = resolveInput(input, state.sync.vault.settings);
-    state.tabs.navigate(id || state.tabs.activeId, target);
+    const result = state.tabs.navigate(id || state.tabs.activeId, target);
+    // Bis 2.6 kehrte navigate() bei unbekanntem Tab oder abgelehnter Adresse
+    // wortlos zurück - die Eingabe verschwand einfach, ohne jeden Hinweis.
+    if (result && !result.ok) throw new Error(result.reason);
     captureTabsIntoVault();
   }));
 
@@ -1065,6 +1069,19 @@ function buildMenu() {
         { label: 'Einstellungen', accelerator: 'CmdOrCtrl+,', click: send('nula:cmd:settings') },
         { type: 'separator' },
         { role: 'togglefullscreen', label: 'Vollbild' },
+        { type: 'separator' },
+        // Ohne diese beiden Einträge gibt es in einem gebauten Nula keinerlei
+        // Möglichkeit, an eine Fehlermeldung zu kommen.
+        {
+          label: 'Entwicklerwerkzeuge',
+          accelerator: 'CmdOrCtrl+Shift+I',
+          click: () => state.win?.webContents.toggleDevTools(),
+        },
+        {
+          label: 'Entwicklerwerkzeuge für die Seite',
+          accelerator: 'CmdOrCtrl+Shift+J',
+          click: () => state.tabs?.withActive((wc) => wc.toggleDevTools()),
+        },
       ],
     },
   ]);

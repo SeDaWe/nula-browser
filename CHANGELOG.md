@@ -2,6 +2,36 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.7.0] - 2026-08-23
+
+### Neu
+- **Google ist die voreingestellte Suchmaschine.** Gilt für neue Vaults und als Rückfall, wenn
+  keine Einstellung greift. Ein bestehender Vault behält seine gespeicherte Wahl — dort einmal
+  unter Einstellungen umstellen
+- Wer sich gegen einen gemerkten Server schon einmal angemeldet hat, bekommt das
+  **Setup-Code-Feld nicht mehr vorgesetzt**. Es bleibt über „Setup-Code eingeben" erreichbar und
+  klappt von selbst auf, wenn der Server ihn doch verlangt. Der Vermerk hängt bewusst an
+  „URL merken": ohne gemerkte Adresse ist nicht bekannt, für welchen Server er gälte
+
+### Korrekturen
+- **Fehler in der Oberfläche waren unsichtbar.** Es gab weder einen Menüeintrag für die
+  Entwicklerwerkzeuge noch eine Fehleranzeige im Fenster — eine Ausnahme im Renderer sah
+  deshalb schlicht so aus, als würde nichts passieren. Jetzt melden `window.onerror` und
+  `unhandledrejection` sich sichtbar, und unter **Ansicht** stehen die Entwicklerwerkzeuge
+  (`Strg+Umschalt+I`, für die Seite `Strg+Umschalt+J`)
+- Ein Fehler in einer Render-Funktion riss bisher die restliche Kette mit. Ein einziges
+  kaputtes Vault-Element legte damit dauerhaft alle folgenden Aktualisierungen lahm — für den
+  Rest der Sitzung. Jeder Ereignis-Handler ist jetzt einzeln eingefasst
+- `navigate()` kehrte bei unbekanntem Tab oder abgelehnter Adresse wortlos zurück. Die Eingabe
+  verschwand einfach. Jetzt gibt es einen Grund, und der Nutzer sieht ihn
+- Antwortet der Hauptprozess nicht, sagt die Oberfläche das nach acht Sekunden, statt still zu
+  warten. Bei Dialogen, die auf eine Eingabe warten, ist die Warnung abgeschaltet
+- Ein Tab ohne `deviceId` lässt die Geräteliste nicht mehr auflaufen
+
+### Tests
+- Integrationstest auf 70 Prüfungen: Google als Standard, der Setup-Code-Vermerk und seine
+  Kopplung an „URL merken"
+
 ## [2.6.0] - 2026-08-23
 
 ### Neu

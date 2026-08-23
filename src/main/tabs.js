@@ -168,15 +168,22 @@ class TabManager {
     this.emit();
   }
 
+  /** Gibt { ok } zurück, damit ein Fehlschlag den Aufrufer erreicht. */
   navigate(id, input) {
     const tab = this.tabs.get(id);
-    if (!tab) return;
-    if (!isSafeNavigationUrl(input)) return;
-    tab.view.webContents.loadURL(input).catch(() => {
+    if (!tab) return { ok: false, reason: `Kein offener Tab mit der ID ${id}` };
+    if (!isSafeNavigationUrl(input)) {
+      return { ok: false, reason: `Adresse nicht erlaubt: ${input}` };
+    }
+    tab.view.webContents.loadURL(input).catch((err) => {
+      const why = String(err?.message || err).replace(/^Error:\s*/, '');
       tab.title = 'Seite nicht erreichbar';
+      tab.loadError = why;
       tab.loading = false;
+      console.error(`[nula] Laden fehlgeschlagen (${input}): ${why}`);
       this.emit();
     });
+    return { ok: true };
   }
 
   close(id) {

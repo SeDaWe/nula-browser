@@ -21,7 +21,7 @@ function emptyVault() {
     bookmarks: [],  // { id, url, title, folder, updatedAt }
     notes: [],      // { id, title, text, source, updatedAt }
     settings: {
-      searchEngine: 'duckduckgo',
+      searchEngine: 'google',
       homepage: null,
       autoLockMinutes: 15,
       blockTrackers: true,

@@ -63,8 +63,14 @@ app.whenReady().then(async () => {
   check('Subdomain eines Trackers wird erkannt', blocker.hostMatches('cdn.doubleclick.net'));
   check('Normaler Host wird durchgelassen', !blocker.hostMatches('developer.mozilla.org'));
   check('Kein False-Positive bei ähnlichem Namen', !blocker.hostMatches('notdoubleclick.example.com'));
+  // Suchmaschine ausdruecklich setzen: der Test prueft, dass file:// zur Suche
+  // wird, nicht welche Suchmaschine voreingestellt ist.
   check('file:// wird als Suchtext behandelt',
-    resolveInput('file:///etc/passwd', {}).startsWith('https://duckduckgo.com/'));
+    resolveInput('file:///etc/passwd', { searchEngine: 'duckduckgo' }).startsWith('https://duckduckgo.com/'));
+  check('Ohne Einstellung wird Google gesucht',
+    resolveInput('hallo welt', {}).startsWith('https://www.google.com/search'));
+  check('Frischer Vault ist auf Google voreingestellt',
+    require('../src/main/vault').emptyVault().settings.searchEngine === 'google');
   check('javascript:// wird nicht als Navigation akzeptiert',
     !isSafeNavigationUrl('javascript://alert(1)'));
 
@@ -433,6 +439,18 @@ app.whenReady().then(async () => {
   config.save({ serverUrl: null, rememberServerUrl: false });
   config.reset();
   check('Die Geraete-ID ueberlebt das Abwaehlen', config.load().deviceId === keptId);
+
+  // Der Setup-Code-Merker gehoert zum gemerkten Server. Ohne gemerkte Adresse
+  // ist nicht bekannt, fuer welchen Server er gaelte - also wird er mit fallen
+  // gelassen, damit das Feld beim naechsten Mal wieder erscheint.
+  config.reset();
+  check('Frisch ist die Einrichtung nicht als erledigt vermerkt', config.load().setupDone === false);
+  config.save({ serverUrl: 'https://sync.example.com', rememberServerUrl: true, setupDone: true });
+  config.reset();
+  check('Mit gemerkter Adresse wird die Einrichtung vermerkt', config.load().setupDone === true);
+  config.save({ serverUrl: null, rememberServerUrl: false, setupDone: false });
+  config.reset();
+  check('Ohne gemerkte Adresse faellt der Vermerk weg', config.load().setupDone === false);
 
   fs.rmSync(cfgDir, { recursive: true, force: true });
   delete process.env.NULA_CONFIG_DIR;
