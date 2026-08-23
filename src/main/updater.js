@@ -101,8 +101,11 @@ async function check({ manual = false } = {}) {
   }
   if (!enabled && !manual) return status;
 
-  wire();
   try {
+    // wire() stand frueher vor dem try. Warf es - etwa weil electron-updater
+    // gar nicht im Paket liegt -, verschluckte das .catch() in start() den
+    // Fehler, und der Status blieb fuer immer auf "noch nicht geprueft".
+    wire();
     await load().checkForUpdates();
   } catch (err) {
     publish({ state: 'error', percent: 0, detail: String(err?.message || err) });

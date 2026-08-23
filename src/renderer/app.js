@@ -15,6 +15,7 @@ const ui = {
   omniDirty: false,
   panelView: 'bookmarks',
   version: null,
+  announcedUpdate: null,
   bmFilter: '',
 };
 
@@ -495,6 +496,21 @@ function renderUpdate(update) {
   install.hidden = update.state !== 'ready';
   $('#update-download').hidden = update.state !== 'manual';
   check.disabled = update.state === 'checking' || update.state === 'downloading';
+
+  // Ein fertiges Update stand bisher nur in dieser Karte. Wer sie nicht oeffnet,
+  // erfuhr nie davon - die App "sagte einfach nichts". Deshalb ein Abzeichen am
+  // Einstellungen-Knopf und genau eine Meldung je Version.
+  const waiting = update.state === 'ready' || update.state === 'manual';
+  $('#update-badge').hidden = !waiting;
+  if (waiting && update.version && ui.announcedUpdate !== update.version) {
+    ui.announcedUpdate = update.version;
+    toast(
+      update.state === 'ready'
+        ? `Version ${update.version} ist bereit — Einstellungen öffnen zum Installieren`
+        : `Version ${update.version} ist verfügbar — Einstellungen öffnen zum Laden`
+    );
+  }
+  if (!waiting) ui.announcedUpdate = null;
 }
 
 function wire() {

@@ -329,6 +329,9 @@ nicht doppelt vergeben werden. Nach dem Zusammenführen lädt Nula den Vault sof
 
 ## Updates
 
+Findet Nula eine neuere Version, meldet es das einmal und setzt ein Abzeichen an den
+Einstellungen-Knopf, das stehen bleibt, bis installiert wurde.
+
 Nula prüft beim Start und danach alle sechs Stunden, ob im
 [Release-Feed](https://github.com/SeDaWe/nula-browser/releases) eine neuere Version liegt. Findet
 es eine, lädt es sie im Hintergrund und meldet unter **Einstellungen → Updates**, dass sie bereit

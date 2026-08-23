@@ -2,6 +2,19 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.8.0] - 2026-08-23
+
+### Korrekturen
+- **Nula sagte nie, dass ein Update bereitliegt.** Gesucht und geladen wurde seit 2.5.0
+  zuverlässig, aber der Zustand stand ausschließlich in der Update-Karte unter Einstellungen.
+  Wer sie nicht öffnete, erfuhr nichts — die App startete einfach und schwieg. Jetzt meldet ein
+  Hinweis die gefundene Version genau einmal, und ein Abzeichen am Einstellungen-Knopf bleibt
+  stehen, bis das Update installiert ist
+- Die Update-Prüfung konnte still scheitern: `wire()` stand vor dem `try`, sodass ein Fehler
+  beim Laden von `electron-updater` vom `.catch()` des Startaufrufs verschluckt wurde und der
+  Status für immer auf „noch nicht geprüft" stehen blieb. Jetzt wird auch das als Fehler
+  angezeigt
+
 ## [2.7.0] - 2026-08-23
 
 ### Neu

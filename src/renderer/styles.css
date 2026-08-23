@@ -244,6 +244,22 @@ body[data-platform="darwin"] .window-controls { display: none; }
 
 /* Der Sperrbildschirm ist ein Overlay ueber der ganzen Chrome-Leiste, deshalb
    braucht er seinen eigenen Satz Knoepfe, oben rechts und ueber dem Verlauf. */
+/* Ein wartendes Update darf nicht nur in den Einstellungen stehen. */
+.icon-btn { position: relative; }
+
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.badge[hidden] { display: none; }
+
 .link-btn {
   align-self: flex-start;
   padding: 0;
