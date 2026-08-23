@@ -389,6 +389,7 @@ async function submitUnlock(e) {
   const res = await window.nula.unlock({
     serverUrl: $('#lock-server').value,
     password: $('#lock-pass').value,
+    setupToken: $('#lock-setup-token').value,
     rememberUrl: $('#lock-remember').checked,
   });
 
@@ -404,6 +405,7 @@ async function submitUnlock(e) {
   }
 
   $('#lock-pass').value = '';
+  $('#lock-setup-token').value = '';
   hideLock();
   if (res.data?.firstRun) toast('Konto angelegt. Dieses Passwort ist ab jetzt der einzige Schlüssel.');
 }

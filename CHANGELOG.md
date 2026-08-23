@@ -2,6 +2,30 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.2.0] - 2026-08-23
+
+### Sicherheit
+- Frische Server werden mit `NULA_SETUP_TOKEN` aus der Serverkonfiguration geschützt; der
+  Browser sendet den Code nur für Setup oder bewusste Identitätsreparatur und speichert ihn nie
+- Sync-Zugangsdaten werden nicht über HTTP außerhalb von localhost oder über Redirects gesendet
+- Vom Server gelieferte Argon2id-Parameter haben clientseitige Obergrenzen gegen Speicher-DoS
+- Navigation ist auf HTTP(S) und die interne New-Tab-Seite begrenzt; `file://`, `javascript://`
+  und andere Fremdschemata werden als Suchtext behandelt, während `localhost:PORT` weiterhin
+  korrekt als lokale Adresse erkannt wird
+- Die Inbox-Identität kann nur mit Master-Key plus Setup-Code bewusst rotiert werden
+
+### Zuverlässigkeit
+- Inbox-Einträge werden erst nach einem erfolgreichen Vault-Upload gelöscht und über ihre ID
+  idempotent übernommen; Notizen bleiben verschlüsselt im Vault statt verworfen zu werden
+- Gleichzeitige Pushes werden zusammengeführt und von `flush()` abgewartet; fehlgeschlagene
+  Live-Pushes werden erneut versucht
+- Auch „Beenden“ aus dem App-Menü wartet auf den letzten Sync
+- Fehlgeschlagene Unlocks räumen abgeleitete Schlüssel, Sync-Timer und Teilzustände vollständig auf
+
+### Dokumentation und Tests
+- README an den Caddy-freien Serverbetrieb und das tatsächliche Verhalten lokaler Metadaten angepasst
+- Paketversion im Lockfile korrigiert und Navigationstests für gefährliche URL-Schemata ergänzt
+
 ## [2.1.0] - 2026-08-22
 
 ### Neu

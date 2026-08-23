@@ -48,8 +48,11 @@ function generateSalt() {
 function normaliseArgon2(params) {
   const p = { ...ARGON2_DEFAULTS, ...(params || {}) };
   if (!Number.isInteger(p.memoryKiB) || p.memoryKiB < 8 * 1024) throw new Error('Argon2: memoryKiB zu klein');
+  if (p.memoryKiB > 1024 * 1024) throw new Error('Argon2: memoryKiB zu gross');
   if (!Number.isInteger(p.passes) || p.passes < 1) throw new Error('Argon2: passes ungueltig');
+  if (p.passes > 10) throw new Error('Argon2: passes zu gross');
   if (!Number.isInteger(p.parallelism) || p.parallelism < 1) throw new Error('Argon2: parallelism ungueltig');
+  if (p.parallelism > 16) throw new Error('Argon2: parallelism zu gross');
   return p;
 }
 

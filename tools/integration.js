@@ -26,6 +26,7 @@ app.setPath('sessionData', RUN_PROFILE);
 const blocker = require('../src/main/blocker');
 const { TabManager } = require('../src/main/tabs');
 const { newId } = require('../src/main/vault');
+const { resolveInput, isSafeNavigationUrl } = require('../src/main/urls');
 
 const TARGET = process.argv.find((a) => a.startsWith('http')) || 'https://example.com';
 
@@ -62,6 +63,10 @@ app.whenReady().then(async () => {
   check('Subdomain eines Trackers wird erkannt', blocker.hostMatches('cdn.doubleclick.net'));
   check('Normaler Host wird durchgelassen', !blocker.hostMatches('developer.mozilla.org'));
   check('Kein False-Positive bei ähnlichem Namen', !blocker.hostMatches('notdoubleclick.example.com'));
+  check('file:// wird als Suchtext behandelt',
+    resolveInput('file:///etc/passwd', {}).startsWith('https://duckduckgo.com/'));
+  check('javascript:// wird nicht als Navigation akzeptiert',
+    !isSafeNavigationUrl('javascript://alert(1)'));
 
   ses.protocol.handle('nula', (request) => {
     const url = new URL(request.url);

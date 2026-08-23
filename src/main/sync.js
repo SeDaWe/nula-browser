@@ -12,6 +12,7 @@ const { emptyVault, mergeVaults } = require('./vault');
 const { encryptVault, decryptVault, unseal } = require('./vaultcrypto');
 
 const PUSH_DEBOUNCE_MS = 2500;
+const PUSH_RETRY_MS = 20000;
 const PULL_INTERVAL_MS = 20000;
 const MAX_RETRIES = 3;
 
@@ -26,6 +27,7 @@ class SyncEngine {
     this.pushTimer = null;
     this.pullTimer = null;
     this.pushing = false;
+    this.pushPromise = null;
     this.dirty = false;
     this.stopped = false;
   }
@@ -62,10 +64,10 @@ class SyncEngine {
     this.schedulePush();
   }
 
-  schedulePush() {
+  schedulePush(delay = PUSH_DEBOUNCE_MS) {
     if (this.stopped) return;
     clearTimeout(this.pushTimer);
-    this.pushTimer = setTimeout(() => this.push().catch(() => {}), PUSH_DEBOUNCE_MS);
+    this.pushTimer = setTimeout(() => this.push().catch(() => {}), delay);
   }
 
   async pull() {
@@ -86,9 +88,20 @@ class SyncEngine {
     this.status('synced');
   }
 
-  async push(attempt = 0) {
-    if (this.stopped || !this.dirty || this.pushing) return;
+  async push() {
+    if (this.stopped || !this.dirty) return;
+    if (this.pushPromise) return this.pushPromise;
     this.pushing = true;
+    this.pushPromise = this.runPush(0);
+    try {
+      return await this.pushPromise;
+    } finally {
+      this.pushPromise = null;
+      this.pushing = false;
+    }
+  }
+
+  async runPush(attempt) {
     this.status('syncing');
     try {
       const blob = encryptVault(this.keys.encKey, this.vault);
@@ -106,24 +119,21 @@ class SyncEngine {
           this.onVaultChanged(this.vault);
         } catch {
           this.status('error', 'Konflikt konnte nicht aufgelöst werden');
-          this.pushing = false;
           return;
         }
-        this.pushing = false;
-        return this.push(attempt + 1);
+        return this.runPush(attempt + 1);
       }
       this.status('error', err.message);
-    } finally {
-      this.pushing = false;
+      this.schedulePush(PUSH_RETRY_MS);
     }
   }
 
   /** Blocking final push, used on quit and on lock. */
   async flush() {
     clearTimeout(this.pushTimer);
+    if (this.pushPromise) await this.pushPromise;
     if (!this.dirty) return;
     for (let i = 0; i < MAX_RETRIES && this.dirty; i++) {
-      this.pushing = false;
       await this.push();
     }
   }
@@ -133,8 +143,14 @@ class SyncEngine {
     if (!this.vault.identity) return 0;
     const { items } = await this.api.getInbox();
     if (!items.length) return 0;
-    const { newId } = require('./vault');
     let applied = 0;
+    let changed = false;
+    const deletable = [];
+    const knownIds = new Set([
+      ...(this.vault.bookmarks || []).map((item) => item.id),
+      ...(this.vault.tabs || []).map((item) => item.id),
+      ...(this.vault.notes || []).map((item) => item.id),
+    ]);
     for (const entry of items) {
       let item;
       try {
@@ -142,10 +158,15 @@ class SyncEngine {
       } catch {
         continue; // not sealed to this identity, leave it where it is
       }
+      if (!['bookmark', 'tab', 'note'].includes(item.type)) continue;
+      if (knownIds.has(entry.id)) {
+        deletable.push(entry.id);
+        continue;
+      }
       const now = new Date().toISOString();
       if (item.type === 'bookmark') {
         this.vault.bookmarks.push({
-          id: newId(),
+          id: entry.id,
           url: item.url,
           title: item.title || item.url,
           folder: item.source ? `via ${item.source}` : null,
@@ -154,7 +175,7 @@ class SyncEngine {
         applied++;
       } else if (item.type === 'tab') {
         this.vault.tabs.push({
-          id: newId(),
+          id: entry.id,
           url: item.url,
           title: item.title || item.url,
           deviceId: 'inbox',
@@ -162,12 +183,28 @@ class SyncEngine {
           updatedAt: now,
         });
         applied++;
+      } else {
+        this.vault.notes = this.vault.notes || [];
+        this.vault.notes.push({
+          id: entry.id,
+          title: item.title || null,
+          text: item.text || '',
+          source: item.source || null,
+          updatedAt: now,
+        });
+        applied++;
       }
-      await this.api.deleteInboxItem(entry.id).catch(() => {});
+      knownIds.add(entry.id);
+      deletable.push(entry.id);
+      changed = true;
     }
-    if (applied) {
+    if (changed) {
       this.touch();
       this.onVaultChanged(this.vault);
+    }
+    if ((changed || this.dirty) && deletable.length) await this.flush();
+    if (!this.dirty) {
+      for (const id of deletable) await this.api.deleteInboxItem(id).catch(() => {});
     }
     return applied;
   }

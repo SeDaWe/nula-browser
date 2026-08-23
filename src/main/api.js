@@ -16,8 +16,8 @@ class NulaApi {
     this.authKeyHex = null;
   }
 
-  async request(method, path, body, { timeoutMs = 10000 } = {}) {
-    const headers = { 'Content-Type': 'application/json' };
+  async request(method, path, body, { timeoutMs = 10000, extraHeaders = {} } = {}) {
+    const headers = { 'Content-Type': 'application/json', ...extraHeaders };
     if (this.authKeyHex) headers['Authorization'] = `Bearer ${this.authKeyHex}`;
     let res;
     try {
@@ -25,6 +25,7 @@ class NulaApi {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
+        redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
@@ -50,16 +51,26 @@ class NulaApi {
     return this.request('GET', '/api/info');
   }
 
-  setup(clientSalt, authKey, argon2) {
-    return this.request('POST', '/api/setup', { clientSalt, authKey, argon2 });
+  setup(clientSalt, authKey, argon2, setupToken) {
+    return this.request(
+      'POST',
+      '/api/setup',
+      { clientSalt, authKey, argon2 },
+      setupToken ? { extraHeaders: { 'X-Nula-Setup-Token': setupToken } } : undefined
+    );
   }
 
   verify() {
     return this.request('POST', '/api/verify');
   }
 
-  registerIdentity(x25519Public, kemPublic) {
-    return this.request('POST', '/api/identity', { x25519Public, kemPublic });
+  registerIdentity(x25519Public, kemPublic, setupToken) {
+    return this.request(
+      'POST',
+      '/api/identity',
+      { x25519Public, kemPublic },
+      setupToken ? { extraHeaders: { 'X-Nula-Setup-Token': setupToken } } : undefined
+    );
   }
 
   getVault(since) {

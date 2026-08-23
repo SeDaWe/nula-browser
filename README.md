@@ -1,11 +1,12 @@
 # Nula
 
-Ein Browser, der auf dem Rechner nichts hinterlässt und trotzdem auf allen Geräten
+Ein Browser, der keine lesbaren Browserdaten dauerhaft ablegt und trotzdem auf allen Geräten
 dieselben Tabs und Lesezeichen hat.
 
 Verlauf, Cookies und Cache existieren ausschließlich im Arbeitsspeicher. Was du behalten
 willst, liegt Ende-zu-Ende verschlüsselt auf deinem eigenen Server. Ohne Master-Passwort
-startet nichts, und es gibt lokal auch nichts, das man ohne dieses Passwort auslesen könnte.
+startet keine Browsing-Sitzung. Lokal lesbar bleiben nur die bewusst gespeicherten Metadaten
+Gerätename, Geräte-ID und optional die Server-Adresse.
 
 Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 [SeDaWe/nula-server](https://github.com/SeDaWe/nula-server).
@@ -60,11 +61,13 @@ Schlüsselaustauschs für Einträge von außen. Nur der erste verlässt jemals d
 ```bash
 git clone https://github.com/SeDaWe/nula-server.git
 cd nula-server
-cp .env.example .env      # Domain eintragen
+cp .env.example .env      # Setup-Code und private Bind-IP eintragen
 docker compose up -d --build
 ```
 
-Der Stack bringt Caddy mit und holt sich das Zertifikat für deine Domain selbst.
+In `.env` kommen der zufällig erzeugte Setup-Code und die private Bind-IP. Nula spricht selbst
+HTTPS mit einem selbstsignierten Zertifikat; dein vorhandener Reverse Proxy leitet per HTTPS
+auf Nula weiter. Eine Domain oder ein A-Record direkt auf dem Nula-Server ist nicht nötig.
 
 **2. Browser starten:**
 
@@ -75,9 +78,10 @@ npm install
 npm start
 ```
 
-**3. Im Sperrbildschirm** die Server-Adresse und ein Master-Passwort eintragen. Beim ersten
-Mal legt das Passwort das Konto an. Auf jedem weiteren Gerät dieselbe Adresse und dasselbe
-Passwort eingeben, und alles ist da.
+**3. Im Sperrbildschirm** die öffentliche Server-Adresse, ein Master-Passwort und beim ersten
+Mal zusätzlich den Setup-Code aus der Server-`.env` eintragen. Der Code wird nicht gespeichert
+und später nur erneut gebraucht, falls eine Inbox-Identität bewusst repariert werden muss.
+Auf jedem weiteren Gerät genügen dieselbe Adresse und dasselbe Passwort, und alles ist da.
 
 Das Entsperren dauert bewusst rund eine Sekunde: Argon2id rechnet mit 256 MiB Speicher,
 damit Rateversuche auf Grafikkarten teuer werden.
@@ -109,7 +113,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.1.0-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.2.0-x86_64.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```
@@ -225,7 +229,8 @@ MacBooks, sieht sie aber unter **Geräte** und kann sie mit einem Klick öffnen.
 ## Von außen befüllen
 
 Im Panel unter **API** erstellst du ein Token. Damit können andere Programme Lesezeichen und
-Tabs in dein Konto schieben, ohne irgendetwas lesen zu können:
+Tabs in dein Konto schieben, ohne irgendetwas lesen zu können. Notizen werden ebenfalls
+angenommen und verschlüsselt im Vault aufbewahrt, haben derzeit aber noch keine eigene Ansicht.
 
 ```bash
 curl -X POST https://sync.example.com/api/inbox \
@@ -234,8 +239,9 @@ curl -X POST https://sync.example.com/api/inbox \
   -d '{"type":"bookmark","url":"https://example.com","title":"Beispiel"}'
 ```
 
-Der Server versiegelt den Eintrag sofort hybrid mit X25519 und ML-KEM-1024. Beim nächsten
-Sync taucht er im Browser auf. Alle Details und Beispiele für PowerShell, Python, Node und
+Der Server versiegelt den Eintrag sofort hybrid mit X25519 und ML-KEM-1024. Erst nachdem der
+Browser ihn erfolgreich in den verschlüsselten Vault geschrieben hat, wird er aus der Inbox
+gelöscht. Alle Details und Beispiele für PowerShell, Python, Node und
 iOS-Kurzbefehle: **[API.md](https://github.com/SeDaWe/nula-server/blob/main/API.md)**.
 
 ---
@@ -315,6 +321,9 @@ Profilverzeichnis nach der besuchten Domain. Findet er sie, schlägt er fehl. Au
 er die Kryptographie **unter Electron**, nicht nur unter Node: Electron bringt BoringSSL
 mit, wo Argon2 fehlt, deshalb muss dort nachgewiesen werden, dass die WebAssembly-Variante
 und ML-KEM tatsächlich laufen.
+
+Zusätzlich prüft der Test, dass gefährliche Fremdschemata wie `file://` und `javascript://`
+nicht navigiert werden.
 
 Die Server- und Protokolltests liegen im
 [Server-Repository](https://github.com/SeDaWe/nula-server#tests) und erwarten dieses

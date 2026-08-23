@@ -318,7 +318,7 @@ function createBrowseSession() {
  * generated once and kept inside the encrypted vault. A fresh identity is pushed
  * straight away so a second device cannot create a competing one.
  */
-async function ensureInboxIdentity(info) {
+async function ensureInboxIdentity(info, setupToken) {
   const sync = state.sync;
   if (!sync.vault.identity) {
     sync.vault.identity = vaultcrypto.createKemIdentity();
@@ -327,15 +327,36 @@ async function ensureInboxIdentity(info) {
   }
   const kemPublic = sync.vault.identity.kemPublic;
   if (info.x25519Public !== state.keys.x25519PubHex || info.kemPublic !== kemPublic) {
-    await state.api.registerIdentity(state.keys.x25519PubHex, kemPublic);
+    await state.api.registerIdentity(state.keys.x25519PubHex, kemPublic, setupToken);
   }
 }
 
-async function connectAndUnlock({ serverUrl, password, rememberUrl }) {
+async function connectAndUnlock({ serverUrl, password, setupToken, rememberUrl }) {
   const url = (serverUrl || config.load().serverUrl || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Keine Server-Adresse konfiguriert');
-  if (!/^https?:\/\//i.test(url)) throw new Error('Server-Adresse muss mit http:// oder https:// beginnen');
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error('Server-Adresse ist ungültig');
+  }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) {
+    throw new Error('Server-Adresse muss eine HTTP(S)-Adresse ohne Zugangsdaten sein');
+  }
+  if (parsedUrl.search || parsedUrl.hash) {
+    throw new Error('Server-Adresse darf keine Query-Parameter oder URL-Fragmente enthalten');
+  }
+  const localHttp =
+    parsedUrl.protocol === 'http:' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(parsedUrl.hostname.toLowerCase());
+  if (parsedUrl.protocol !== 'https:' && !localHttp) {
+    throw new Error('Außerhalb von localhost ist für den Sync-Server HTTPS erforderlich');
+  }
   if (!password || password.length < 8) throw new Error('Passwort muss mindestens 8 Zeichen haben');
+  const setupCode = (setupToken || '').trim();
+  if (setupCode && !/^[0-9a-f]{64}$/.test(setupCode)) {
+    throw new Error('Setup-Code muss aus genau 64 kleingeschriebenen Hex-Zeichen bestehen');
+  }
 
   const api = new NulaApi(url);
   const info = await api.info();
@@ -343,6 +364,9 @@ async function connectAndUnlock({ serverUrl, password, rememberUrl }) {
   let clientSalt = info.clientSalt;
   let firstRun = false;
   if (!info.initialized) {
+    if (info.setupTokenRequired && !setupCode) {
+      throw new Error('Beim ersten Verbinden ist der Setup-Code aus der Server-.env erforderlich');
+    }
     clientSalt = vaultcrypto.generateSalt();
     firstRun = true;
   }
@@ -350,54 +374,68 @@ async function connectAndUnlock({ serverUrl, password, rememberUrl }) {
   // Argon2id takes about a second on purpose; the renderer shows a busy state.
   const argon2 = firstRun ? vaultcrypto.ARGON2_DEFAULTS : info.argon2;
   const keys = await vaultcrypto.deriveKeys(password, clientSalt, argon2);
-  api.authKeyHex = keys.authKeyHex;
+  try {
+    api.authKeyHex = keys.authKeyHex;
 
-  if (firstRun) {
-    await api.setup(clientSalt, keys.authKeyHex, keys.argon2);
-  } else {
-    try {
-      await api.verify();
-    } catch (err) {
-      if (err.status === 401) throw new Error('Falsches Passwort');
-      throw err;
+    if (firstRun) {
+      await api.setup(clientSalt, keys.authKeyHex, keys.argon2, setupCode);
+    } else {
+      try {
+        await api.verify();
+      } catch (err) {
+        if (err.status === 401) throw new Error('Falsches Passwort');
+        throw err;
+      }
     }
+
+    // Only the address is optional here. The device id has to persist either way,
+    // otherwise every start would look like a new device and pile up stale tabs.
+    const remember = rememberUrl !== false;
+    config.save({ serverUrl: remember ? url : null, rememberServerUrl: remember });
+    config.ensureDeviceId();
+
+    state.api = api;
+    state.keys = keys;
+    state.sync = new SyncEngine(
+      api,
+      keys,
+      (s) => {
+        state.syncStatus = s;
+        pushStatus();
+      },
+      () => pushVaultState()
+    );
+
+    await state.sync.start();
+    await ensureInboxIdentity(info, setupCode);
+    state.locked = false;
+
+    state.tabs = new TabManager(state.win, state.browseSession, (payload) => pushTabState(payload));
+    state.tabs.newTabRequestHandler = (target) => {
+      state.tabs.create(newId(), target);
+    };
+    state.tabs.setVisible(true);
+    restoreTabsFromVault();
+
+    state.sync.drainInbox().catch(() => {});
+    resetLockTimer();
+    pushVaultState();
+    pushStatus();
+
+    return { firstRun };
+  } catch (err) {
+    if (state.keys === keys) {
+      state.sync?.stop();
+      state.tabs?.closeAll();
+      state.api = null;
+      state.keys = null;
+      state.sync = null;
+      state.tabs = null;
+      state.locked = true;
+    }
+    vaultcrypto.wipeKeys(keys);
+    throw err;
   }
-
-  // Only the address is optional here. The device id has to persist either way,
-  // otherwise every start would look like a new device and pile up stale tabs.
-  const remember = rememberUrl !== false;
-  config.save({ serverUrl: remember ? url : null, rememberServerUrl: remember });
-  config.ensureDeviceId();
-
-  state.api = api;
-  state.keys = keys;
-  state.sync = new SyncEngine(
-    api,
-    keys,
-    (s) => {
-      state.syncStatus = s;
-      pushStatus();
-    },
-    () => pushVaultState()
-  );
-
-  await state.sync.start();
-  await ensureInboxIdentity(info);
-  state.locked = false;
-
-  state.tabs = new TabManager(state.win, state.browseSession, (payload) => pushTabState(payload));
-  state.tabs.newTabRequestHandler = (target) => {
-    state.tabs.create(newId(), target);
-  };
-  state.tabs.setVisible(true);
-  restoreTabsFromVault();
-
-  state.sync.drainInbox().catch(() => {});
-  resetLockTimer();
-  pushVaultState();
-  pushStatus();
-
-  return { firstRun };
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +655,20 @@ if (!singleInstance) {
 
   app.on('window-all-closed', () => app.quit());
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (!state.quitting && !state.locked && state.sync) {
+      event.preventDefault();
+      state.quitting = true;
+      captureTabsIntoVault();
+      state.sync
+        .flush()
+        .catch(() => {})
+        .finally(() => {
+          state.sync?.stop();
+          app.quit();
+        });
+      return;
+    }
     state.quitting = true;
     if (state.sync) state.sync.stop();
     globalShortcut.unregisterAll();

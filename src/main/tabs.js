@@ -8,6 +8,7 @@
 
 const { WebContentsView, shell } = require('electron');
 const path = require('node:path');
+const { isSafeNavigationUrl, NEW_TAB } = require('./urls');
 
 const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with renderer CSS
 
@@ -58,6 +59,7 @@ class TabManager {
   }
 
   create(id, url, { activate = true, pinned = false } = {}) {
+    const initialUrl = url && isSafeNavigationUrl(url) ? url : NEW_TAB;
     const view = new WebContentsView({
       webPreferences: {
         session: this.session,
@@ -72,7 +74,7 @@ class TabManager {
     const tab = {
       id,
       view,
-      url: url || 'about:blank',
+      url: initialUrl,
       title: 'Neuer Tab',
       loading: false,
       canGoBack: false,
@@ -124,9 +126,15 @@ class TabManager {
       this.emit();
     });
 
+    const guardNavigation = (event, target) => {
+      if (!isSafeNavigationUrl(target)) event.preventDefault();
+    };
+    wc.on('will-navigate', guardNavigation);
+    wc.on('will-redirect', guardNavigation);
+
     // Popups open as regular tabs; external protocols never touch the OS silently.
     wc.setWindowOpenHandler(({ url: target }) => {
-      if (/^https?:/i.test(target)) this.emitNewTabRequest(target);
+      if (isSafeNavigationUrl(target) && target !== NEW_TAB) this.emitNewTabRequest(target);
       return { action: 'deny' };
     });
 
@@ -137,7 +145,7 @@ class TabManager {
     });
 
     if (activate) this.activate(id);
-    if (url) this.navigate(id, url);
+    this.navigate(id, initialUrl);
     this.emit();
     return tab;
   }
@@ -163,6 +171,7 @@ class TabManager {
   navigate(id, input) {
     const tab = this.tabs.get(id);
     if (!tab) return;
+    if (!isSafeNavigationUrl(input)) return;
     tab.view.webContents.loadURL(input).catch(() => {
       tab.title = 'Seite nicht erreichbar';
       tab.loading = false;
@@ -200,7 +209,7 @@ class TabManager {
   }
 
   openExternal(url) {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (isSafeNavigationUrl(url) && url !== NEW_TAB) shell.openExternal(url);
   }
 }
 

@@ -233,6 +233,13 @@
         </div>
 
         <div class="field">
+          <label for="lock-setup-token">Setup-Code <span class="optional">(Einrichtung oder Schlüsselreparatur)</span></label>
+          <input id="lock-setup-token" type="password" autocomplete="off"
+                 placeholder="Wert aus NULA_SETUP_TOKEN" />
+          <p class="hint">Wird nur zur einmaligen Kontoeinrichtung gesendet und nie gespeichert.</p>
+        </div>
+
+        <div class="field">
           <label for="lock-pass">Master-Passwort</label>
           <div class="pass-wrap">
             <input id="lock-pass" type="password" autocomplete="current-password" placeholder="Mindestens 8 Zeichen" />

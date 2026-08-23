@@ -15,6 +15,16 @@ const SEARCH_ENGINES = {
 
 const NEW_TAB = 'nula://newtab';
 
+function isSafeNavigationUrl(value) {
+  if (value === NEW_TAB) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // A bare host: localhost with optional port, an IPv6 literal, an IPv4 address,
 // or something.tld. Anything with whitespace is a search, never an address.
 const HOST_PATTERN =
@@ -24,18 +34,14 @@ function resolveInput(input, settings) {
   const raw = (input || '').trim();
   if (!raw) return NEW_TAB;
 
-  // Explicit schemes are taken at face value, with one exception below.
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || /^nula:/i.test(raw)) {
-    return raw;
-  }
+  if (isSafeNavigationUrl(raw)) return raw;
+  if (HOST_PATTERN.test(raw)) return 'https://' + raw;
 
-  // Scheme-like but not a real URL, e.g. "javascript:alert(1)" pasted into the
-  // bar. Never navigate to those; treat them as a search instead.
-  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !HOST_PATTERN.test(raw)) {
+  // Explicit non-web schemes can expose local files or invoke handlers. Search
+  // them as text instead; only HTTP(S) and Nula's exact new-tab URL are allowed.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
     return search(raw, settings);
   }
-
-  if (HOST_PATTERN.test(raw)) return 'https://' + raw;
 
   return search(raw, settings);
 }
@@ -45,4 +51,4 @@ function search(query, settings) {
   return engine.replace('%s', encodeURIComponent(query));
 }
 
-module.exports = { resolveInput, SEARCH_ENGINES, NEW_TAB };
+module.exports = { resolveInput, isSafeNavigationUrl, SEARCH_ENGINES, NEW_TAB };

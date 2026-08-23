@@ -19,6 +19,7 @@ function emptyVault() {
     schema: 1,
     tabs: [],       // { id, url, title, deviceId, updatedAt, pinned }
     bookmarks: [],  // { id, url, title, folder, updatedAt }
+    notes: [],      // { id, title, text, source, updatedAt }
     settings: {
       searchEngine: 'duckduckgo',
       homepage: null,
@@ -94,6 +95,7 @@ function mergeVaults(local, remote) {
     identity: pickIdentity(local.identity, remote.identity),
     tabs: mergeList(local.tabs || [], remote.tabs || [], tombstoneIds),
     bookmarks: mergeList(local.bookmarks || [], remote.bookmarks || [], tombstoneIds),
+    notes: mergeList(local.notes || [], remote.notes || [], tombstoneIds),
     settings: { ...emptyVault().settings, ...(localNewer ? remote.settings : local.settings), ...(localNewer ? local.settings : remote.settings) },
     tombstones,
     updatedAt: new Date().toISOString(),
