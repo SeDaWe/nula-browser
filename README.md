@@ -19,6 +19,7 @@ Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 - [Einrichten](#einrichten)
 - [Installation unter Debian 13](#installation-unter-debian-13)
 - [Installer bauen](#installer-bauen)
+- [Releases](#releases)
 - [Tastenkürzel](#tastenkürzel)
 - [Was beim Sperren passiert](#was-beim-sperren-passiert)
 - [Sync-Verhalten](#sync-verhalten)
@@ -115,7 +116,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.4.0-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.4.1-x86_64.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```
@@ -175,12 +176,48 @@ npm start
 ## Installer bauen
 
 ```bash
-npm run dist:win     # NSIS-Installer und portable EXE
+npm run dist:win     # Installer und portable EXE
 npm run dist:mac     # DMG und ZIP
 npm run dist:linux   # AppImage
 ```
 
 Ergebnisse landen in `dist/`. Für macOS muss auf einem Mac gebaut werden.
+
+Für Windows entstehen dabei **zwei** eigenständige Dateien, jede vollständig — es wird nichts
+nachgeladen, weder aus dem Netz noch vom Sync-Server:
+
+| Datei | Wofür |
+|---|---|
+| `Nula-Setup-<version>-x64.exe` | Der normale Installer. Fragt nach dem Zielordner, legt einen Startmenü-Eintrag und einen Uninstaller an. Installiert für den aktuellen Benutzer, braucht also keine Administratorrechte |
+| `Nula-<version>-x64-portable.exe` | Eine einzelne Datei zum Direktstarten, ohne Installation. Passt zum Anspruch des Browsers: nichts wird eingerichtet, und auf einem USB-Stick lässt sich Nula so von fremden Rechnern benutzen |
+
+Beide sind rund 100 MB groß. Das ist der Preis dafür, dass die komplette Chromium-Engine
+mitgeliefert wird; ein Electron-Programm kann nicht kleiner sein.
+
+> Die Dateien sind **nicht signiert**. Windows SmartScreen zeigt deshalb beim ersten Start
+> „Der Computer wurde durch Windows geschützt" und nennt einen unbekannten Herausgeber. Über
+> „Weitere Informationen" → „Trotzdem ausführen" startet Nula normal. Das dauerhaft
+> loszuwerden geht nur mit einem gekauften Code-Signing-Zertifikat.
+
+---
+
+## Releases
+
+`.github/workflows/release.yml` baut die Installer auf GitHubs Runnern und hängt sie an einen
+Release. Der Auslöser ist bewusst die Versionsnummer, nicht jeder Push:
+
+1. Version in `package.json` anheben und einen Eintrag in [CHANGELOG.md](CHANGELOG.md) schreiben
+2. Auf `main` pushen
+3. Der Workflow prüft, ob es das Tag `v<version>` schon gibt. Wenn ja, endet er sofort und
+   verbraucht keine Runner-Minuten. Wenn nein, baut er, testet und veröffentlicht
+
+Gebaut werden Windows und Linux. Der Windows-Job lässt vorher die Testsuite laufen, sodass kein
+Release entsteht, dessen Tests rot sind. macOS bleibt außen vor, weil macOS-Runner in privaten
+Repositories das Zehnfache an Minuten kosten; bei Bedarf lässt es sich unter **Actions → Release
+→ Run workflow** einzeln zuschalten.
+
+Die Release-Notes zieht der Workflow aus dem Changelog-Abschnitt der jeweiligen Version. Ein
+fehlgeschlagener Lauf lässt sich über **Run workflow** wiederholen, ohne die Version zu ändern.
 
 ---
 

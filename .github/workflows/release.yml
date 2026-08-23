@@ -1,0 +1,153 @@
+name: Release
+
+# Ein Push auf main, der die Version in package.json anhebt, veroeffentlicht sie.
+# Ohne Versionswechsel passiert nichts: der check-Job sieht das vorhandene Tag und
+# bricht ab, bevor teure Runner starten. Ueber "Run workflow" laesst sich derselbe
+# Lauf von Hand ausloesen, etwa um einen fehlgeschlagenen Release zu wiederholen.
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: 'macOS mitbauen (kostet 10x Runner-Minuten)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-nula-browser
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      needed: ${{ steps.v.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION ist schon veroeffentlicht, nichts zu tun."
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$VERSION ist neu, Release wird gebaut."
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win
+            # Nur hier laufen die Tests: der Integrationstest braucht eine echte
+            # Electron-Sitzung, und Windows ist ohnehin die Hauptplattform.
+            test: true
+          - os: ubuntu-latest
+            target: linux
+            test: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Tests
+        if: matrix.test
+        run: npm test
+      - name: Bauen
+        run: npm run dist:${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nula-${{ matrix.target }}
+          # Nur die fertigen Installer, nicht das entpackte Verzeichnis.
+          path: |
+            dist/*.exe
+            dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
+
+  build-macos:
+    needs: check
+    if: needs.check.outputs.needed == 'true' && inputs.macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nula-mac
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: [check, build]
+    # Auch dann veroeffentlichen, wenn der optionale macOS-Job gar nicht lief.
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Release-Notes aus dem Changelog ziehen
+        run: |
+          set -e
+          VERSION="${{ needs.check.outputs.version }}"
+          # Den Abschnitt "## [x.y.z]" bis zur naechsten "## [" Zeile ausschneiden.
+          awk -v v="## [$VERSION]" '
+            index($0, v) == 1 { on = 1; next }
+            on && /^## \[/     { exit }
+            on                { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "Kein Changelog-Eintrag fuer $VERSION gefunden." > notes.md
+          fi
+          {
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Windows:** \`Nula-Setup-$VERSION-x64.exe\` installiert mit Startmenue-Eintrag und Uninstaller."
+            echo "\`Nula-$VERSION-x64-portable.exe\` laeuft ohne Installation direkt los."
+            echo ""
+            echo "Die Dateien sind nicht signiert. Windows SmartScreen meldet deshalb einen"
+            echo "unbekannten Herausgeber: \"Weitere Informationen\" und dann \"Trotzdem ausfuehren\"."
+          } >> notes.md
+          cat notes.md
+      - name: Veroeffentlichen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          VERSION="${{ needs.check.outputs.version }}"
+          ls -la artifacts
+          gh release create "v$VERSION" \
+            --target main \
+            --title "Nula $VERSION" \
+            --notes-file notes.md \
+            artifacts/*

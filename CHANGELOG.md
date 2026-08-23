@@ -2,6 +2,30 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.4.1] - 2026-08-23
+
+Reine Verpackung. Am Programm selbst ändert sich nichts.
+
+### Korrekturen
+- **Der Windows-Installer wurde beim Bauen überschrieben.** `nsis` und `portable` trugen
+  denselben `artifactName`, also blieb nach `npm run dist:win` genau eine Datei übrig — das
+  Portable. Beide Ziele haben jetzt eigene Namen: `Nula-Setup-<version>-x64.exe` und
+  `Nula-<version>-x64-portable.exe`
+- Die Zeile in `files`, die nur den Schriftschnitt „regular" der Icons einpacken sollte, hatte
+  keine Wirkung: positive Muster schränken Produktions-Dependencies nicht ein. Mit einem
+  negativen Muster fliegen die anderen fünf Schnitte tatsächlich raus, das spart 11 MB
+
+### Neu
+- Eigenes App-Icon statt des Electron-Standards, gezeichnet aus demselben Markenzeichen wie in
+  der Oberfläche: ein Ring in der Akzentfarbe mit diagonalem Strich. Als `.ico` mit sieben
+  Größen von 16 bis 256 Pixeln
+- `author` und `homepage` in `package.json`, damit Windows im Installer und unter „Apps &
+  Features" einen Herausgeber anzeigt
+- `.github/workflows/release.yml`: Ein Push auf `main`, der die Version anhebt, baut Installer
+  für Windows und Linux, lässt auf Windows die Testsuite laufen und veröffentlicht das Ergebnis
+  als GitHub-Release mit den Release-Notes aus diesem Changelog. Ohne Versionswechsel endet der
+  Lauf sofort, macOS ist wegen der zehnfachen Runner-Minuten nur auf Zuruf dabei
+
 ## [2.4.0] - 2026-08-23
 
 ### Neu
