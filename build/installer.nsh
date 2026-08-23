@@ -7,16 +7,23 @@
 ; Bei einer stillen Installation (genau das macht das Selbst-Update) wird weder
 ; die Seite gezeigt noch die Datei geschrieben. Sonst wuerde jedes Update die
 ; zuletzt getroffene Wahl wieder ueberschreiben.
+;
+; Alles Seitenbezogene steht hinter !ifndef BUILD_UNINSTALLER: electron-builder
+; kompiliert dasselbe Skript ein zweites Mal fuer den Uninstaller und haengt die
+; Seite dort nicht ein. Unreferenzierte Funktionen und Variablen erzeugen dann
+; Warnungen, und makensis laeuft mit -WX - aus jeder Warnung wird ein Fehler.
 
 !include nsDialogs.nsh
 !include LogicLib.nsh
 
-Var NulaUpdateCheckbox
-Var NulaUpdateWanted
-
 !macro customPageAfterChangeDir
   Page custom nulaUpdatePageCreate nulaUpdatePageLeave
 !macroend
+
+!ifndef BUILD_UNINSTALLER
+
+Var NulaUpdateCheckbox
+Var NulaUpdateWanted
 
 Function nulaUpdatePageCreate
   ${If} ${Silent}
@@ -48,14 +55,18 @@ Function nulaUpdatePageLeave
   ${NSD_GetState} $NulaUpdateCheckbox $NulaUpdateWanted
 FunctionEnd
 
+!endif
+
 !macro customInstall
-  ${IfNot} ${Silent}
-    FileOpen $0 "$INSTDIR\auto-update.default" w
-    ${If} $NulaUpdateWanted == 1
-      FileWrite $0 "1"
-    ${Else}
-      FileWrite $0 "0"
+  !ifndef BUILD_UNINSTALLER
+    ${IfNot} ${Silent}
+      FileOpen $0 "$INSTDIR\auto-update.default" w
+      ${If} $NulaUpdateWanted == 1
+        FileWrite $0 "1"
+      ${Else}
+        FileWrite $0 "0"
+      ${EndIf}
+      FileClose $0
     ${EndIf}
-    FileClose $0
-  ${EndIf}
+  !endif
 !macroend
