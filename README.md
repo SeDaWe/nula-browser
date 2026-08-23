@@ -116,7 +116,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.4.1-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.4.1.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```

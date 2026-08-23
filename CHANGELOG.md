@@ -21,6 +21,8 @@ Reine Verpackung. Am Programm selbst ändert sich nichts.
   Größen von 16 bis 256 Pixeln
 - `author` und `homepage` in `package.json`, damit Windows im Installer und unter „Apps &
   Features" einen Herausgeber anzeigt
+- Der Dateiname des AppImage im README war seit jeher falsch: er trägt keinen `-x86_64`-Zusatz,
+  wie der erste echte Release-Build gezeigt hat
 - `.github/workflows/release.yml`: Ein Push auf `main`, der die Version anhebt, baut Installer
   für Windows und Linux, lässt auf Windows die Testsuite laufen und veröffentlicht das Ergebnis
   als GitHub-Release mit den Release-Notes aus diesem Changelog. Ohne Versionswechsel endet der
