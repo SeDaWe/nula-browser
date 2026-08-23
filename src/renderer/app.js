@@ -540,9 +540,15 @@ function wire() {
   });
   omni.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      // Zuerst lesen, dann erst den Fokus abgeben: blur() feuert den
+      // blur-Handler synchron, der ueber renderToolbar() das Feld wieder auf
+      // die aktuelle Tab-URL setzt. Wurde der Wert danach gelesen, navigierte
+      // Nula zur Seite, auf der man ohnehin schon war - auf einem neuen Tab zu
+      // nula://newtab, also sichtbar zu gar nichts.
+      const typed = omni.value;
       ui.omniDirty = false;
       omni.blur();
-      call(window.nula.tab.navigate(ui.activeId, omni.value));
+      call(window.nula.tab.navigate(ui.activeId, typed));
     } else if (e.key === 'Escape') {
       ui.omniDirty = false;
       omni.blur();

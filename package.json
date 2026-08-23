@@ -1,7 +1,7 @@
 {
   "name": "nula-browser",
   "productName": "Nula",
-  "version": "2.10.0",
+  "version": "2.11.0",
   "description": "Privacy browser that leaves nothing on the machine and syncs tabs and bookmarks end-to-end encrypted through your own server.",
   "main": "src/main/main.js",
   "author": "SeDaWe",

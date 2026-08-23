@@ -2,6 +2,24 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.11.0] - 2026-08-23
+
+### Korrekturen
+- **Die Adressleiste hat noch nie funktioniert.** Der Fehler steckt seit dem ersten Commit
+  (2.0.0) drin: Beim Druck auf Enter rief der Handler erst `omni.blur()` und las **danach**
+  `omni.value`. `blur()` feuert den blur-Handler aber synchron, und der setzt das Feld über
+  `renderToolbar()` auf die aktuelle Tab-URL zurück — beide Schutzbedingungen dort
+  (`!ui.omniDirty` und `document.activeElement !== omni`) sind in genau diesem Moment offen.
+  Gesendet wurde also nicht das Getippte, sondern die Adresse der Seite, auf der man schon war.
+  Auf einem neuen Tab war das der leere String, und `resolveInput('')` ergibt `nula://newtab`:
+  Nula lud die leere Neue-Tab-Seite neu, der Ladebalken lief einmal durch, sichtbar passierte
+  nichts. Der Wert wird jetzt vor `blur()` gelesen
+- Warum das keiner der bisherigen Tests fand: sie prüften `resolveInput()` und
+  `TabManager.navigate()` direkt und nie die tatsächliche Reihenfolge Tastendruck → blur →
+  lesen. Der Smoke-Test tippt jetzt wirklich in die Adressleiste, drückt Enter und besteht
+  darauf, dass genau das Getippte im Hauptprozess ankommt — gegengeprüft daran, dass er ohne
+  den Fix auch wirklich fehlschlägt
+
 ## [2.10.0] - 2026-08-23
 
 ### Korrekturen

@@ -27,7 +27,14 @@ const STUBS = {
   'nula:activity': { ok: true, data: null },
 };
 
+// Was die Oberflaeche tatsaechlich zur Navigation schickt.
+const navigated = [];
+
 app.whenReady().then(async () => {
+  ipcMain.handle('nula:tab:navigate', (_e, payload) => {
+    navigated.push(payload);
+    return { ok: true, data: null };
+  });
   for (const [channel, value] of Object.entries(STUBS)) {
     ipcMain.handle(channel, () => value);
   }
@@ -132,6 +139,32 @@ app.whenReady().then(async () => {
   `);
   await pause(320);
   await shoot(win, 'chrome-devices-light');
+
+  // --- Regression: die Omnibox muss das Getippte schicken -------------------
+  // blur() feuert den blur-Handler synchron, und der setzt das Feld ueber
+  // renderToolbar() auf die aktuelle Tab-URL zurueck. Wird der Wert danach
+  // gelesen, navigiert Nula dorthin, wo man ohnehin schon ist. Auf einem neuen
+  // Tab heisst das nula://newtab - sichtbar passiert dann gar nichts.
+  navigated.length = 0;
+  await win.webContents.executeJavaScript(`
+    ui.tabs = [{ id: 'omni-t', url: 'nula://newtab', title: 'Neuer Tab', loading: false }];
+    ui.activeId = 'omni-t';
+    renderToolbar();
+    const o = document.querySelector('#omni-input');
+    o.focus();
+    o.value = 'example.com';
+    o.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    true;
+  `);
+  await pause(200);
+  if (navigated.length !== 1 || navigated[0].input !== 'example.com') {
+    problems.push(
+      'Omnibox schickt "' + (navigated[0] ? navigated[0].input : '(nichts)') + '" statt "example.com"'
+    );
+  } else {
+    console.log('  ok   Omnibox schickt das Getippte');
+  }
+
 
   console.log(`\n${problems.length ? 'FEHLER' : 'Sauber'}: ${problems.length} Konsolenfehler`);
   problems.forEach((p) => console.log(`  - ${p}`));
