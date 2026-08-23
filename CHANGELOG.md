@@ -2,6 +2,19 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.6.0] - 2026-08-23
+
+### Neu
+- **Auch macOS erkennt Updates jetzt selbst.** Bisher lief die Suche dort in denselben
+  Squirrel.Mac-Fehler wie die Installation. Tatsächlich betrifft die Signaturpflicht nur das
+  Anwenden — gesucht wird über die GitHub-API und damit plattformunabhängig. Nula lädt auf dem
+  Mac deshalb nichts herunter, meldet aber die gefundene Version und öffnet auf Knopfdruck die
+  Release-Seite
+- Der Release-Workflow nimmt Apple-Signatur-Secrets entgegen (`MAC_CSC_LINK`,
+  `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). Fehlen
+  sie, wird das Signieren übersprungen; sind sie da, signiert und notarisiert derselbe Lauf, und
+  macOS kann sich anschließend wie Windows selbst aktualisieren
+
 ## [2.5.0] - 2026-08-23
 
 ### Neu

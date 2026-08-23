@@ -431,12 +431,15 @@ function renderUpdate(update) {
     current: `${version} · aktuell`,
     downloading: `Version ${update.version || ''} wird geladen … ${update.percent || 0} %`,
     ready: `Version ${update.version || ''} ist bereit`,
+    // macOS: gefunden, aber ohne Signatur nicht selbst installierbar.
+    manual: `Version ${update.version || ''} ist verfügbar`,
     error: update.detail || 'Die Update-Suche ist fehlgeschlagen.',
   };
   text.textContent = messages[update.state] || messages.idle;
   text.classList.toggle('is-error', update.state === 'error');
 
   install.hidden = update.state !== 'ready';
+  $('#update-download').hidden = update.state !== 'manual';
   check.disabled = update.state === 'checking' || update.state === 'downloading';
 }
 
@@ -537,6 +540,9 @@ function wire() {
       btn.disabled = false;
       btn.querySelector('span').textContent = 'Neu starten und installieren';
     }
+  });
+  $('#update-download').addEventListener('click', async () => {
+    await call(window.nula.update.download());
   });
   $('#update-auto').addEventListener('change', async (e) => {
     const res = await call(window.nula.update.setEnabled(e.target.checked));

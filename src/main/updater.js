@@ -10,12 +10,18 @@
  * klickt. Heruntergeladen wird dagegen automatisch, damit der Neustart später
  * nicht minutenlang wartet.
  *
- * Auf macOS scheitert das Anwenden eines Updates, solange die App nicht signiert
- * ist: Squirrel.Mac prüft die Signatur und lehnt sonst ab. Das wird hier nicht
- * verschwiegen, sondern als Status gemeldet.
+ * macOS geht einen eigenen Weg. Squirrel.Mac prüft beim ANWENDEN die Signatur und
+ * lehnt eine unsignierte App ab — das PRÜFEN läuft dagegen über die GitHub-API und
+ * funktioniert dort genauso. Deshalb wird auf dem Mac nur gesucht und dann gezielt
+ * zum Download geführt, statt eine Installation zu versprechen, die scheitern muss.
+ * Sobald ein Apple-Developer-ID-Zertifikat in den Build einfließt, kann hier auf den
+ * normalen Weg umgestellt werden.
  */
 
-const { app } = require('electron');
+const { app, shell } = require('electron');
+
+const IS_MAC = process.platform === 'darwin';
+const RELEASES = 'https://github.com/SeDaWe/nula-browser/releases';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // alle sechs Stunden
 const FIRST_CHECK_DELAY_MS = 10_000; // nicht in den Start hineinfunken
@@ -26,7 +32,7 @@ let timer = null;
 let enabled = true;
 let wired = false;
 
-let status = { state: 'idle', version: null, detail: null, percent: 0 };
+let status = { state: 'idle', version: null, detail: null, percent: 0, url: null };
 
 function publish(next) {
   status = { ...status, ...next };
@@ -37,7 +43,9 @@ function publish(next) {
 function load() {
   if (autoUpdater) return autoUpdater;
   ({ autoUpdater } = require('electron-updater'));
-  autoUpdater.autoDownload = true;
+  // Auf dem Mac nichts herunterladen: der Download landete in Squirrel.Mac, und
+  // das bricht mangels Signatur ab. Gesucht wird trotzdem.
+  autoUpdater.autoDownload = !IS_MAC;
   // Installiert wird ausschließlich auf Knopfdruck, nie beim nächsten Beenden.
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = null;
@@ -51,9 +59,16 @@ function wire() {
 
   up.on('checking-for-update', () => publish({ state: 'checking', detail: null }));
   up.on('update-not-available', () => publish({ state: 'current', detail: null, percent: 0 }));
-  up.on('update-available', (info) =>
-    publish({ state: 'downloading', version: info?.version || null, detail: null, percent: 0 })
-  );
+  up.on('update-available', (info) => {
+    const version = info?.version || null;
+    publish({
+      state: IS_MAC ? 'manual' : 'downloading',
+      version,
+      detail: null,
+      percent: 0,
+      url: version ? `${RELEASES}/tag/v${version}` : RELEASES,
+    });
+  });
   up.on('download-progress', (p) =>
     publish({ state: 'downloading', percent: Math.round(p?.percent || 0) })
   );
@@ -150,6 +165,12 @@ function install() {
   load().quitAndInstall(false, true);
 }
 
+/** macOS: die Release-Seite der gefundenen Version im Standardbrowser öffnen. */
+async function openDownload() {
+  await shell.openExternal(status.url || RELEASES);
+  return status;
+}
+
 function getStatus() {
   return status;
 }
@@ -159,4 +180,4 @@ function stop() {
   timer = null;
 }
 
-module.exports = { start, check, install, setEnabled, getStatus, stop };
+module.exports = { start, check, install, openDownload, setEnabled, getStatus, stop };

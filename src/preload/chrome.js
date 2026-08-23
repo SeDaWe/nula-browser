@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('nula', {
   update: {
     check: () => invoke('nula:update:check'),
     install: () => invoke('nula:update:install'),
+    download: () => invoke('nula:update:download'),
     setEnabled: (on) => invoke('nula:update:setEnabled', on),
   },
 

@@ -884,6 +884,8 @@ function registerIpc() {
     return updater.getStatus();
   }));
 
+  ipcMain.handle('nula:update:download', guard(async () => updater.openDownload()));
+
   ipcMain.handle('nula:update:install', guard(async () => {
     // quitAndInstall() ersetzt den Prozess und geht dabei an before-quit und am
     // Fenster-close vorbei. Der Vault muss also HIER weg, sonst ist alles seit

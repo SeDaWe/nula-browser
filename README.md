@@ -345,10 +345,18 @@ das, statt Daten zu verlieren.
 
 Zwei Einschränkungen:
 
-- **macOS aktualisiert sich nicht selbst.** Squirrel.Mac verlangt eine signierte App, und Nula ist
-  nicht signiert. Nula meldet das als Fehler statt still zu scheitern; das Update muss dort von
-  Hand aus den Releases geladen werden.
+- **Auf macOS sucht Nula, installiert aber nicht selbst.** Die Suche läuft über die GitHub-API und
+  funktioniert dort genauso; das *Anwenden* übernimmt auf dem Mac Squirrel.Mac, und das verlangt
+  eine signierte App. Statt eine Installation zu versprechen, die scheitern muss, meldet Nula die
+  gefundene Version und öffnet auf Knopfdruck die passende Release-Seite.
 - Im Entwicklungsmodus (`npm start`) wird grundsätzlich nicht gesucht.
+
+Damit macOS sich ebenfalls selbst aktualisiert, braucht es ein **Developer-ID-Zertifikat** von
+Apple (Developer Program, 99 $/Jahr). Der Release-Workflow ist darauf schon vorbereitet: Sind die
+Secrets `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` und
+`APPLE_TEAM_ID` im Repository hinterlegt, signiert und notarisiert derselbe Lauf automatisch, und
+der Mac-Weg schaltet auf den normalen Update-Pfad um. Ohne die Secrets wird das Signieren
+übersprungen, ohne dass etwas bricht.
 
 ---
 
