@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('nula', {
 
   backup: {
     exportAll: () => invoke('nula:backup:export'),
+    importAll: () => invoke('nula:backup:import'),
   },
 
   sync: {

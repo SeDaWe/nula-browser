@@ -22,7 +22,7 @@ Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 - [Tastenkürzel](#tastenkürzel)
 - [Was beim Sperren passiert](#was-beim-sperren-passiert)
 - [Sync-Verhalten](#sync-verhalten)
-- [Daten exportieren](#daten-exportieren)
+- [Daten exportieren und importieren](#daten-exportieren-und-importieren)
 - [Von außen befüllen](#von-außen-befüllen)
 - [Was Nula auf die Platte schreibt](#was-nula-auf-die-platte-schreibt)
 - [Kryptographie](#kryptographie)
@@ -115,7 +115,7 @@ selbst bauen (siehe unten), dann:
 
 ```bash
 sudo mkdir -p /opt/nula
-sudo mv Nula-2.3.0-x86_64.AppImage /opt/nula/nula.AppImage
+sudo mv Nula-2.4.0-x86_64.AppImage /opt/nula/nula.AppImage
 sudo chmod +x /opt/nula/nula.AppImage
 sudo ln -sf /opt/nula/nula.AppImage /usr/local/bin/nula
 ```
@@ -228,9 +228,9 @@ MacBooks, sieht sie aber unter **Geräte** und kann sie mit einem Klick öffnen.
 
 ---
 
-## Daten exportieren
+## Daten exportieren und importieren
 
-Unter **Einstellungen → Vollständiger Datenexport** erzeugt Nula eine portable Datei mit der
+Unter **Einstellungen → Vollständiges Backup** erzeugt Nula eine portable Datei mit der
 Endung `.nula-backup.json`. Vor dem Export werden die gerade geöffneten Tabs erfasst und ein
 letzter Sync-Versuch abgewartet.
 
@@ -255,8 +255,35 @@ entschlüsselt und authentifiziert den fertigen Blob vor dem Schreiben noch einm
 Selbstprüfung. Wo das Dateisystem es unterstützt, erhält die Datei Modus `0600`.
 
 Das Backup ersetzt keine Passwort-Wiederherstellung: Zum Entschlüsseln ist weiterhin exakt
-dasselbe Master-Passwort nötig. Die Oberfläche von Version 2.3 exportiert und verifiziert das
-Format; eine Import-Oberfläche ist noch nicht Bestandteil dieses Releases.
+dasselbe Master-Passwort nötig.
+
+### Importieren
+
+**Backup importieren** liest eine solche Datei wieder ein. Das geht nur im entsperrten
+Zustand und nur mit demselben Master-Passwort, mit dem das Backup erzeugt wurde — ein fremdes
+Passwort scheitert an der Authentifizierung des Chiffrats, nicht erst an dessen Inhalt.
+
+Nula **führt zusammen**, statt zu ersetzen. Das macht einen Import wiederholbar und
+verhindert, dass ein altes Backup gelöschte Einträge zurückbringt:
+
+- Lesezeichen, Tabs und Notizen aus dem Backup werden ergänzt; bei gleicher ID gewinnt der
+  neuere Stand
+- hier gelöschte Lesezeichen bleiben gelöscht, solange ihr Tombstone noch nicht abgelaufen
+  ist. Tombstones werden nach 30 Tagen verworfen; ein **älteres** Backup kann deshalb
+  Lesezeichen zurückbringen, die vor mehr als 30 Tagen gelöscht wurden
+- die **Inbox-Identität dieses Kontos bleibt unverändert**. Andernfalls würde ein altes
+  Backup die ML-KEM-Schlüssel zurückdrehen und alle seither versiegelten Inbox-Einträge
+  unlesbar machen
+- Tabs, die das Backup für **dieses** Gerät gespeichert hat, erscheinen unter **Geräte** als
+  eigenes Gerät `backup` und lassen sich von dort öffnen. Sonst würde die nächste
+  Tab-Erfassung sie sofort wieder entfernen, weil jedes Gerät seine eigene Tab-Liste besitzt
+- verschlüsselte Inbox-Einträge, die beim Export noch offen waren, werden entsiegelt und
+  ebenfalls übernommen
+
+Vor dem Schreiben fragt Nula, ob auch die **Einstellungen** aus dem Backup gelten sollen.
+„Nur Daten übernehmen" lässt Suchmaschine, Autolock und Design unverändert. Nicht importiert
+werden Geräte-ID und Gerätename: Die Geräte-ID identifiziert genau dieses Gerät und darf
+nicht doppelt vergeben werden. Nach dem Zusammenführen lädt Nula den Vault sofort hoch.
 
 ---
 
@@ -286,7 +313,7 @@ Ohne eine bewusste Exportaktion genau eine Datei: `~/.nula/config.json`. Darin s
 Gerätename, eine zufällige Geräte-ID und, falls du den Haken **URL merken** gesetzt lässt,
 die Adresse deines Servers. Keine besuchten URLs, keine Schlüssel, keine Sitzungsdaten.
 
-Ein über **Vollständiger Datenexport** gewähltes Backup wird zusätzlich genau an den im
+Ein über **Vollständiges Backup** gewähltes Backup wird zusätzlich genau an den im
 Speichern-Dialog ausgewählten Ort geschrieben. Es enthält sensible Daten ausschließlich
 verschlüsselt und wird niemals automatisch angelegt.
 

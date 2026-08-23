@@ -22,10 +22,14 @@ const backup = require('./backup');
 const vaultcrypto = require('./vaultcrypto');
 const { NulaApi } = require('./api');
 const { SyncEngine } = require('./sync');
-const { emptyVault, newId } = require('./vault');
+const { importableVault, mergeBackupVault, newId } = require('./vault');
 const blocker = require('./blocker');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
 const { resolveInput } = require('./urls');
+
+// A final push must not keep a closing window or a locking session waiting on an
+// unreachable server. The push keeps running, it just stops being awaited.
+const FLUSH_TIMEOUT_MS = 8000;
 
 // ---------------------------------------------------------------------------
 // Disk hygiene, applied before anything Chromium does
@@ -118,6 +122,8 @@ const state = {
   lockTimer: null,
   syncStatus: { state: 'idle', detail: null },
   exportInProgress: false,
+  importInProgress: false,
+  locking: false,
   quitting: false,
 };
 
@@ -163,10 +169,23 @@ function resetLockTimer() {
 }
 
 async function lock(reason) {
-  if (state.locked) return;
+  if (state.locked || state.locking) return;
+  // lock() only clears state.keys and state.sync after its own flush has been
+  // awaited. Without this flag anything running in parallel -- an open import
+  // dialog, say -- would still see an unlocked browser and go on to merge into a
+  // SyncEngine that lock() is about to throw away.
+  state.locking = true;
+  try {
+    await runLock(reason);
+  } finally {
+    state.locking = false;
+  }
+}
+
+async function runLock(reason) {
   if (state.sync) {
     captureTabsIntoVault();
-    await state.sync.flush().catch(() => {});
+    await state.sync.flush(FLUSH_TIMEOUT_MS).catch(() => {});
     state.sync.stop();
   }
   if (state.tabs) state.tabs.closeAll();
@@ -254,13 +273,13 @@ function createWindow() {
   win.on('leave-full-screen', () => state.tabs && state.tabs.layout());
 
   win.on('close', (e) => {
-    if (state.quitting || state.locked || !state.sync) return;
+    if (state.quitting || state.locked || state.locking || !state.sync) return;
     // Final flush on quit, as requested: live sync plus a guaranteed save on close.
     e.preventDefault();
     state.quitting = true;
     captureTabsIntoVault();
     state.sync
-      .flush()
+      .flush(FLUSH_TIMEOUT_MS)
       .catch(() => {})
       .finally(() => win.destroy());
   });
@@ -457,7 +476,7 @@ function guard(fn) {
 }
 
 function requireUnlocked() {
-  if (state.locked || !state.sync) throw new Error('Browser ist gesperrt');
+  if (state.locked || state.locking || !state.sync) throw new Error('Browser ist gesperrt');
 }
 
 async function exportAllData() {
@@ -558,9 +577,25 @@ async function exportAllData() {
     const verified = backup.decryptBackup(keys.encKey, document);
     if (verified.exportedAt !== timestamp) throw new Error('Backup-Selbstprüfung fehlgeschlagen');
 
+    // The save dialog only confirmed the path the user actually picked. Appending
+    // the full extension afterwards points at a different file, so a collision on
+    // that adjusted path has to be confirmed separately instead of overwriting it.
     let filePath = result.filePath;
-    if (!filePath.toLowerCase().endsWith('.nula-backup.json')) {
-      filePath += '.nula-backup.json';
+    if (!/\.nula-backup\.json$/i.test(filePath)) {
+      const adjusted = `${filePath.replace(/\.json$/i, '')}.nula-backup.json`;
+      if (fs.existsSync(adjusted)) {
+        const overwrite = await dialog.showMessageBox(state.win, {
+          type: 'warning',
+          buttons: ['Ersetzen', 'Abbrechen'],
+          defaultId: 1,
+          cancelId: 1,
+          title: 'Datei ersetzen?',
+          message: `${path.basename(adjusted)} existiert bereits.`,
+          detail: 'Nula ergänzt die vollständige Endung .nula-backup.json. Soll die vorhandene Datei ersetzt werden?',
+        });
+        if (overwrite.response !== 0) return { canceled: true };
+      }
+      filePath = adjusted;
     }
     backup.writeBackupFile(filePath, document);
     return {
@@ -577,6 +612,140 @@ async function exportAllData() {
     };
   } finally {
     state.exportInProgress = false;
+    resetLockTimer();
+  }
+}
+
+function countEntries(vault) {
+  return {
+    tabs: vault.tabs?.length || 0,
+    bookmarks: vault.bookmarks?.length || 0,
+    notes: vault.notes?.length || 0,
+  };
+}
+
+/**
+ * Read an encrypted export back in and merge it into the running vault. Merging
+ * rather than replacing keeps local deletions deleted (tombstones win) and makes
+ * a repeated import a no-op. Only the master password that produced the backup
+ * can open it, so this always runs against the currently unlocked session.
+ */
+async function importAllData() {
+  requireUnlocked();
+  if (state.importInProgress) throw new Error('Ein Import läuft bereits');
+  state.importInProgress = true;
+  resetLockTimer();
+  try {
+    const chosen = await dialog.showOpenDialog(state.win, {
+      title: 'Verschlüsseltes Nula-Backup importieren',
+      buttonLabel: 'Backup einlesen',
+      filters: [{ name: 'Nula-Backup', extensions: ['json'] }],
+      properties: ['openFile'],
+    });
+    if (chosen.canceled || !chosen.filePaths?.length) return { canceled: true };
+    const sourcePath = chosen.filePaths[0];
+
+    requireUnlocked();
+    const keys = state.keys;
+    const sync = state.sync;
+
+    const document = backup.readBackupFile(sourcePath);
+    let payload;
+    try {
+      payload = backup.decryptBackup(keys.encKey, document);
+    } catch {
+      throw new Error(
+        'Backup gehört zu einem anderen Master-Passwort oder ist beschädigt und lässt sich nicht öffnen'
+      );
+    }
+
+    const incoming = payload.vault;
+    const pending = Array.isArray(payload.serverData?.pendingInbox)
+      ? payload.serverData.pendingInbox
+      : [];
+    const offered = countEntries(importableVault(incoming));
+
+    const answer = await dialog.showMessageBox(state.win, {
+      type: 'question',
+      buttons: ['Alles übernehmen', 'Nur Daten übernehmen', 'Abbrechen'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Backup importieren',
+      message: `Backup vom ${new Date(document.exportedAt).toLocaleString('de-DE')}`,
+      detail: [
+        `Enthalten: ${offered.bookmarks} Lesezeichen, ${offered.tabs} Tabs, ${offered.notes} Notizen`,
+        pending.length ? `sowie ${pending.length} noch nicht abgeholte Inbox-Einträge` : null,
+        '',
+        'Der Inhalt wird mit dem aktuellen Vault zusammengeführt. Vor weniger als 30 Tagen',
+        'gelöschte Einträge kommen nicht zurück, und die Inbox-Identität bleibt unverändert.',
+        'Löschungen aus dem Backup gelten dabei auch hier: Einträge, die auf dem anderen',
+        'Gerät gelöscht wurden, verschwinden dann ebenfalls.',
+        '',
+        '"Alles übernehmen" setzt zusätzlich die Einstellungen aus dem Backup.',
+      ]
+        .filter((line) => line !== null)
+        .join('\n'),
+    });
+    if (answer.response === 2) return { canceled: true };
+    const withSettings = answer.response === 0;
+
+    requireUnlocked();
+    if (state.keys !== keys || state.sync !== sync) {
+      throw new Error('Browser wurde während des Imports gesperrt');
+    }
+
+    const before = countEntries(sync.vault);
+    const merged = mergeBackupVault(sync.vault, incoming, {
+      deviceId: config.load().deviceId,
+      withSettings,
+    });
+    sync.vault = merged;
+
+    // Inbox entries that were still queued when the export ran are sealed to this
+    // identity, so they can be opened and folded in exactly like a live drain.
+    let inboxApplied = 0;
+    if (pending.length && merged.identity) {
+      ({ applied: inboxApplied } = await sync.applyInboxEntries(pending));
+    }
+
+    const after = countEntries(sync.vault);
+    sync.touch();
+    await sync.flush(FLUSH_TIMEOUT_MS).catch(() => {});
+
+    // A lock can still have started during those awaits and thrown this engine
+    // away. Reporting success then would claim a merge that no longer exists
+    // anywhere, so say plainly that it did not stick.
+    if (state.keys !== keys || state.sync !== sync || state.locked) {
+      throw new Error('Browser wurde während des Imports gesperrt, der Import wurde verworfen');
+    }
+
+    pushVaultState();
+    pushStatus();
+    resetLockTimer();
+
+    // A backup carries its own tombstones, so a merge can also REMOVE entries
+    // that this device still held. Reporting after - before unclamped would
+    // print a negative count and hide the deletion entirely.
+    const delta = (key) => after[key] - before[key];
+    return {
+      canceled: false,
+      fileName: path.basename(sourcePath),
+      settingsRestored: withSettings,
+      inboxApplied,
+      pendingUpload: sync.dirty,
+      added: {
+        tabs: Math.max(0, delta('tabs')),
+        bookmarks: Math.max(0, delta('bookmarks')),
+        notes: Math.max(0, delta('notes')),
+      },
+      removed: {
+        tabs: Math.max(0, -delta('tabs')),
+        bookmarks: Math.max(0, -delta('bookmarks')),
+        notes: Math.max(0, -delta('notes')),
+      },
+    };
+  } finally {
+    state.importInProgress = false;
     resetLockTimer();
   }
 }
@@ -697,6 +866,7 @@ function registerIpc() {
   }));
 
   ipcMain.handle('nula:backup:export', guard(async () => exportAllData()));
+  ipcMain.handle('nula:backup:import', guard(async () => importAllData()));
 
   // ---- sync ----
   ipcMain.handle('nula:sync:now', guard(async () => {
@@ -782,12 +952,12 @@ if (!singleInstance) {
   app.on('window-all-closed', () => app.quit());
 
   app.on('before-quit', (event) => {
-    if (!state.quitting && !state.locked && state.sync) {
+    if (!state.quitting && !state.locked && !state.locking && state.sync) {
       event.preventDefault();
       state.quitting = true;
       captureTabsIntoVault();
       state.sync
-        .flush()
+        .flush(FLUSH_TIMEOUT_MS)
         .catch(() => {})
         .finally(() => {
           state.sync?.stop();

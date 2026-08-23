@@ -165,7 +165,7 @@
           <div class="backup-copy">
             <span class="backup-icon"><i class="ph ph-file-lock" aria-hidden="true"></i></span>
             <div>
-              <strong>Vollständiger Datenexport</strong>
+              <strong>Vollständiges Backup</strong>
               <p>Tabs, Lesezeichen, Notizen, Einstellungen, Geräte- und Serverdaten in einer verschlüsselten Backup-Datei.</p>
             </div>
           </div>
@@ -173,7 +173,11 @@
             <i class="ph ph-export" aria-hidden="true"></i>
             <span>Backup exportieren</span>
           </button>
-          <p class="backup-hint">Das Backup enthält auch private Inbox-Schlüssel und lässt sich deshalb nur mit deinem Master-Passwort entschlüsseln.</p>
+          <button class="btn-ghost" id="backup-import">
+            <i class="ph ph-download-simple" aria-hidden="true"></i>
+            <span>Backup importieren</span>
+          </button>
+          <p class="backup-hint">Das Backup enthält auch private Inbox-Schlüssel und lässt sich deshalb nur mit deinem Master-Passwort entschlüsseln. Ein Import führt den Inhalt mit dem aktuellen Vault zusammen: vor weniger als 30 Tagen gelöschte Einträge kommen nicht zurück, Löschungen aus dem Backup gelten dafür auch hier.</p>
         </div>
       </div>
     </section>

@@ -128,30 +128,58 @@ class SyncEngine {
     }
   }
 
-  /** Blocking final push, used on quit and on lock. */
-  async flush() {
+  /**
+   * Blocking final push, used on quit and on lock. With a timeout the caller
+   * stops waiting after that many milliseconds: an unreachable server must not
+   * freeze the window on close. The push itself keeps running, it is only no
+   * longer awaited, and this.dirty still tells the caller it did not land.
+   */
+  async flush(timeoutMs = 0) {
     clearTimeout(this.pushTimer);
-    if (this.pushPromise) await this.pushPromise;
-    if (!this.dirty) return;
-    for (let i = 0; i < MAX_RETRIES && this.dirty; i++) {
-      await this.push();
+    const work = (async () => {
+      if (this.pushPromise) await this.pushPromise;
+      if (!this.dirty) return;
+      for (let i = 0; i < MAX_RETRIES && this.dirty; i++) {
+        await this.push();
+      }
+    })();
+    if (!timeoutMs) return work;
+
+    let timer;
+    try {
+      await Promise.race([
+        work.catch(() => {}),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  /** Pull items pushed by external tools, fold them into the vault, then delete them. */
-  async drainInbox() {
-    if (!this.vault.identity) return 0;
-    const { items } = await this.api.getInbox();
-    if (!items.length) return 0;
-    let applied = 0;
-    let changed = false;
+  /**
+   * Fold sealed inbox entries into the vault. Split out from drainInbox so a
+   * backup import can replay the entries that were still pending when the
+   * export was taken. Touches nothing but the vault: no server calls, no push.
+   * Returns how many were applied and which ids may now be deleted, which
+   * includes entries that were already in the vault.
+   */
+  async applyInboxEntries(entries) {
     const deletable = [];
+    let applied = 0;
+    if (!this.vault.identity) return { applied, deletable };
     const knownIds = new Set([
       ...(this.vault.bookmarks || []).map((item) => item.id),
       ...(this.vault.tabs || []).map((item) => item.id),
       ...(this.vault.notes || []).map((item) => item.id),
     ]);
-    for (const entry of items) {
+    // A tombstone outranks the inbox. Without this an entry that was taken in
+    // once and deleted afterwards comes straight back: on a live drain whose
+    // server-side delete failed, and on a backup import, where the entries are
+    // replayed after the merge and so never meet the merge's tombstone filter.
+    const tombstoned = new Set((this.vault.tombstones || []).map((stone) => stone.id));
+    for (const entry of entries) {
       let item;
       try {
         item = await unseal(this.keys, this.vault.identity, entry.sealed);
@@ -159,7 +187,7 @@ class SyncEngine {
         continue; // not sealed to this identity, leave it where it is
       }
       if (!['bookmark', 'tab', 'note'].includes(item.type)) continue;
-      if (knownIds.has(entry.id)) {
+      if (knownIds.has(entry.id) || tombstoned.has(entry.id)) {
         deletable.push(entry.id);
         continue;
       }
@@ -196,13 +224,22 @@ class SyncEngine {
       }
       knownIds.add(entry.id);
       deletable.push(entry.id);
-      changed = true;
     }
-    if (changed) {
+    return { applied, deletable };
+  }
+
+  /** Pull items pushed by external tools, fold them into the vault, then delete them. */
+  async drainInbox() {
+    if (!this.vault.identity) return 0;
+    const { items } = await this.api.getInbox();
+    if (!items.length) return 0;
+    const { applied, deletable } = await this.applyInboxEntries(items);
+    if (applied) {
       this.touch();
       this.onVaultChanged(this.vault);
     }
-    if ((changed || this.dirty) && deletable.length) await this.flush();
+    // Only drop them on the server once the vault that holds them is safely up.
+    if ((applied || this.dirty) && deletable.length) await this.flush();
     if (!this.dirty) {
       for (const id of deletable) await this.api.deleteInboxItem(id).catch(() => {});
     }

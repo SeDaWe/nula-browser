@@ -182,6 +182,18 @@ function createBackup({ encKey, clientSalt, argon2, payload, exportedAt = new Da
   };
 }
 
+/**
+ * Read a backup document from disk. The size guard runs before the file is read
+ * so a hostile or accidental multi-gigabyte file cannot be pulled into memory.
+ */
+function readBackupFile(filePath) {
+  const target = path.resolve(filePath);
+  const stat = fs.statSync(target);
+  if (!stat.isFile()) throw new Error('Der gewählte Pfad ist keine Datei');
+  if (stat.size > MAX_BACKUP_BYTES * 2) throw new Error('Backup-Datei ist zu groß');
+  return parseBackup(fs.readFileSync(target, 'utf8'));
+}
+
 function writeBackupFile(filePath, document) {
   const backup = parseBackup(document);
   const target = path.resolve(filePath);
@@ -219,6 +231,7 @@ module.exports = {
   createBackup,
   decryptBackup,
   parseBackup,
+  readBackupFile,
   writeBackupFile,
   BACKUP_FORMAT,
   PAYLOAD_FORMAT,

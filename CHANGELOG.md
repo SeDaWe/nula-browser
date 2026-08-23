@@ -2,6 +2,61 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.4.0] - 2026-08-23
+
+### Neu
+- **Backup importieren** in den Einstellungen. Eine `.nula-backup.json` lässt sich wieder
+  einlesen, solange dasselbe Master-Passwort entsperrt ist; damit ist der Export aus 2.3
+  erstmals ein vollständiger Wiederherstellungsweg
+- Der Import führt zusammen statt zu ersetzen: gleiche IDs gewinnen nach Zeitstempel, hier
+  gelöschte Einträge bleiben gelöscht, und ein zweiter Import derselben Datei ändert nichts.
+  Tombstones laufen nach 30 Tagen ab; ein älteres Backup kann davor gelöschte Lesezeichen
+  deshalb zurückbringen, was README und Import-Dialog jetzt auch so sagen
+- Verschlüsselte Inbox-Einträge, die beim Export noch offen waren, werden beim Import
+  entsiegelt und mit übernommen
+- Vor dem Zusammenführen fragt Nula, ob auch die Einstellungen aus dem Backup gelten sollen
+
+### Korrekturen
+- **Tombstones vervielfachten sich bei jedem Sync.** `mergeVaults()` hängte beide Listen
+  aneinander, ohne nach ID zu deduplizieren, also `|lokal| + |remote|` bei jedem Merge. Bei
+  zwei aktiven Geräten genügte **ein** gelöschtes Lesezeichen: die Liste wuchs Fibonacci-artig
+  auf fünfstellige Kopien derselben ID, der Vault-Blob überschritt das 8-MB-Limit des Servers,
+  und der `413` ließ das Gerät nie wieder pushen — bei einem Vault, der nur im RAM liegt, sind
+  die Änderungen beim Beenden weg. Betraf den normalen Sync, nicht nur den Import
+- Ein gelöschter Eintrag kommt über die Inbox nicht mehr zurück. Die Tombstone-Prüfung fehlte
+  beim Übernehmen von Inbox-Einträgen ganz, betraf also auch den normalen Sync, wenn das
+  serverseitige Löschen eines bereits übernommenen Eintrags fehlgeschlagen war
+- Ein Backup-Eintrag ohne brauchbares `updatedAt` überschreibt keinen neueren lokalen mehr;
+  der Zeitstempelvergleich ist bei `NaN` immer falsch und hätte den Import gewinnen lassen
+- Ein Tab ohne `deviceId` aus einem fremden Backup lässt die Geräteliste nicht mehr auflaufen
+- Die aktuelle Inbox-Identität wird beim Import nie durch eine ältere aus dem Backup ersetzt.
+  Die allgemeine Merge-Regel bevorzugt die ältere Identität, was hier alle seither
+  versiegelten Inbox-Einträge unlesbar gemacht hätte
+- Tabs, die ein Backup für dieses Gerät enthält, laufen jetzt als eigenes Gerät `backup` mit,
+  statt bei der nächsten Tab-Erfassung wieder zu verschwinden
+- Tombstones werden beim Import zusammengefasst; wiederholte Importe hatten die Liste und
+  damit den verschlüsselten Vault sonst immer weiter wachsen lassen
+- Der Export hängt `.nula-backup.json` nicht mehr stillschweigend an einen bereits bestätigten
+  Dateinamen an. Traf der ergänzte Name eine vorhandene Datei, wurde sie ohne Rückfrage
+  überschrieben, weil die Bestätigung des Speichern-Dialogs einem anderen Pfad galt
+- Der letzte Sync beim Sperren, Schließen und Beenden wartet höchstens acht Sekunden. Bei
+  nicht erreichbarem Server wirkte das Fenster vorher bis zu einer halben Minute eingefroren
+- Fenster schließen und Beenden starten während eines laufenden Sperrvorgangs keinen zweiten
+  Flush mehr; der Sperrvorgang erledigt ihn bereits
+- Ein Import meldet keinen Erfolg mehr, wenn der Browser sich zwischendurch gesperrt und die
+  zusammengeführte Sitzung damit verworfen hat
+- Ein Backup bringt seine eigenen Löschungen mit, ein Import kann also auch lokale Einträge
+  entfernen. Das steht jetzt im Dialog, im Hinweistext und in der Rückmeldung; vorher zeigte
+  der Toast dafür eine negative Zahl an
+
+### Tests
+- Integrationstest auf 65 Prüfungen erweitert: Import-Roundtrip, Ablehnung eines fremden
+  Master-Passworts, Tombstone-Schutz, Identitäts-Rückdrehung, Tab-Zuordnung, Tombstone-Dedup,
+  Einstellungs-Wahl, wiederholter Import, ein strukturell kaputtes Backup und die
+  Normalisierung von Einträgen ohne brauchbares `updatedAt` oder `deviceId`. Eine eigene
+  Prüfung fährt vierzehn wechselseitige Merges und besteht darauf, dass am Ende genau ein
+  Tombstone übrig ist
+
 ## [2.3.0] - 2026-08-23
 
 ### Neu

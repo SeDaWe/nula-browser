@@ -509,6 +509,28 @@ function wire() {
     const suffix = unavailable.length ? ' (Server-Metadaten teilweise nicht erreichbar)' : '';
     toast(`${res.data.fileName}: ${total} Vault-Einträge exportiert${suffix}`);
   });
+  $('#backup-import').addEventListener('click', async () => {
+    const btn = $('#backup-import');
+    const label = btn.querySelector('span');
+    btn.disabled = true;
+    label.textContent = 'Backup wird gelesen';
+    const res = await call(window.nula.backup.importAll());
+    btn.disabled = false;
+    label.textContent = 'Backup importieren';
+    if (!res.ok || res.data?.canceled) return;
+    // added zählt bereits alles, was im Vault gelandet ist, die entsiegelten
+    // Inbox-Einträge eingeschlossen. Sie noch einmal zu addieren wäre doppelt.
+    const added = res.data.added || { tabs: 0, bookmarks: 0, notes: 0 };
+    const removed = res.data.removed || { tabs: 0, bookmarks: 0, notes: 0 };
+    const total = added.tabs + added.bookmarks + added.notes;
+    const gone = removed.tabs + removed.bookmarks + removed.notes;
+    const parts = [total === 1 ? '1 neuer Eintrag' : `${total} neue Einträge`];
+    if (gone) parts.push(gone === 1 ? '1 gelöschter übernommen' : `${gone} Löschungen übernommen`);
+    if (res.data.inboxApplied) parts.push(`davon ${res.data.inboxApplied} aus der Inbox`);
+    if (res.data.settingsRestored) parts.push('Einstellungen übernommen');
+    if (res.data.pendingUpload) parts.push('Upload steht noch aus');
+    toast(`${res.data.fileName}: ${parts.join(', ')}`);
+  });
 
   // Tokens
   $('#token-create').addEventListener('click', async () => {

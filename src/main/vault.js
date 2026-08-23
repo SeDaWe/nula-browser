@@ -54,6 +54,24 @@ function pruneTombstones(tombstones) {
 }
 
 /*
+ * Every merge unions two tombstone lists, so without this the count is
+ * |local| + |remote| each time and grows without bound: two devices that both
+ * sync keep re-appending their own copy to the other's. One deleted bookmark
+ * reaches five figures within a dozen rounds, the vault blob crosses the
+ * server's 8 MB limit, and the resulting 413 leaves the device permanently
+ * unable to push. Merging is not idempotent unless this runs.
+ */
+function dedupeTombstones(tombstones) {
+  const newest = new Map();
+  for (const stone of tombstones || []) {
+    if (!stone || typeof stone.id !== 'string') continue;
+    const seen = newest.get(stone.id);
+    if (!seen || String(stone.deletedAt) > String(seen.deletedAt)) newest.set(stone.id, stone);
+  }
+  return [...newest.values()];
+}
+
+/*
  * The inbox identity is write-once. If two devices both generated one before
  * either had synced, the older wins so every device converges on the same key;
  * items sealed to the loser are unreadable, which is why the browser pushes a
@@ -85,7 +103,7 @@ function mergeVaults(local, remote) {
   if (!remote) return local;
   if (!local) return remote;
 
-  const tombstones = pruneTombstones([...(local.tombstones || []), ...(remote.tombstones || [])]);
+  const tombstones = pruneTombstones(dedupeTombstones([...(local.tombstones || []), ...(remote.tombstones || [])]));
   const tombstoneIds = new Set(tombstones.map((t) => t.id));
 
   const localNewer = new Date(local.updatedAt) >= new Date(remote.updatedAt);
@@ -102,4 +120,93 @@ function mergeVaults(local, remote) {
   };
 }
 
-module.exports = { emptyVault, newId, mergeVaults, pruneTombstones, pickIdentity };
+/*
+ * A backup is authenticated as a whole but not structurally validated, so coerce
+ * it into the shape mergeVaults() expects. A hand-edited file then cannot throw
+ * halfway through a merge and leave the running vault torn. updatedAt is pinned
+ * to the epoch on purpose: which settings survive is decided explicitly in
+ * mergeBackupVault(), never by whichever side carries the newer timestamp.
+ */
+function importableVault(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  // mergeList compares timestamps with >, and NaN makes that false, so an item
+  // with a missing or unparseable updatedAt would win every comparison and
+  // silently overwrite a newer local entry. Pinning it to the epoch means it is
+  // only taken when nothing local carries that id.
+  const stamp = (candidate) => {
+    // Date.parse() coerces to string, which a JSON object with a non-callable
+    // toString would make throw. Anything that is not already a string or a
+    // number cannot be a timestamp anyway.
+    if (typeof candidate !== 'string' && typeof candidate !== 'number') {
+      return new Date(0).toISOString();
+    }
+    const parsed = Date.parse(candidate);
+    return Number.isNaN(parsed) ? new Date(0).toISOString() : new Date(parsed).toISOString();
+  };
+  const list = (candidate) =>
+    Array.isArray(candidate)
+      ? candidate
+          .filter((item) => item && typeof item === 'object' && typeof item.id === 'string')
+          .map((item) => ({ ...item, updatedAt: stamp(item.updatedAt) }))
+      : [];
+  return {
+    schema: 1,
+    identity: source.identity && typeof source.identity === 'object' ? source.identity : null,
+    // The device panel groups remote tabs by deviceId and slices that string, so
+    // a tab without one would throw there on every single vault push.
+    tabs: list(source.tabs).map((tab) => ({
+      ...tab,
+      deviceId: typeof tab.deviceId === 'string' && tab.deviceId ? tab.deviceId : 'backup',
+    })),
+    bookmarks: list(source.bookmarks),
+    notes: list(source.notes),
+    settings: source.settings && typeof source.settings === 'object' ? source.settings : {},
+    tombstones: Array.isArray(source.tombstones)
+      ? source.tombstones.filter((stone) => stone && typeof stone.id === 'string')
+      : [],
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+/**
+ * Fold a vault that came out of an encrypted backup into the running one.
+ *
+ * Merging rather than replacing is what makes an import safe to repeat and keeps
+ * local deletions deleted, because tombstones beat any incoming item regardless
+ * of its timestamp -- for as long as the tombstone exists. mergeVaults prunes
+ * them after 30 days, so a backup older than that can bring back items that were
+ * deleted long ago. Three things the generic merge would get wrong here:
+ *
+ *   - pickIdentity() prefers the OLDER createdAt, so a stale backup would roll
+ *     the inbox keys back and make everything sealed since then undecryptable.
+ *     A running identity therefore always wins.
+ *   - tabs the backup recorded for THIS device would be wiped again by the next
+ *     captureTabsIntoVault(), which owns this device's slice outright. They are
+ *     filed under a device of their own so they stay reachable under "Geräte",
+ *     the same trick inbox tabs already use.
+ *   - settings are an explicit choice, not a timestamp race.
+ */
+function mergeBackupVault(current, incoming, { deviceId = null, withSettings = false } = {}) {
+  const staged = importableVault(incoming);
+  staged.tabs = staged.tabs.map((tab) =>
+    deviceId && tab.deviceId === deviceId ? { ...tab, deviceId: 'backup' } : tab
+  );
+
+  const merged = mergeVaults(current, staged);
+  merged.identity = current.identity || merged.identity;
+  merged.settings = withSettings
+    ? { ...emptyVault().settings, ...staged.settings }
+    : { ...current.settings };
+  return merged;
+}
+
+module.exports = {
+  emptyVault,
+  newId,
+  mergeVaults,
+  mergeBackupVault,
+  importableVault,
+  dedupeTombstones,
+  pruneTombstones,
+  pickIdentity,
+};

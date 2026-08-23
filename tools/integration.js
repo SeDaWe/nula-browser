@@ -285,7 +285,127 @@ app.whenReady().then(async () => {
     backup.parseBackup(fs.readFileSync(backupFile, 'utf8')).exportedAt === exportedAt);
   check('Keine temporäre Klartext- oder Backup-Datei bleibt liegen',
     fs.readdirSync(backupDir).join(',') === 'export.nula-backup.json');
+
+  // --- reading a backup back in ---------------------------------------------
+  console.log('\nBackup-Import');
+  const reread = backup.readBackupFile(backupFile);
+  check('Backup wird von der Platte gelesen und geprüft', reread.exportedAt === exportedAt);
+
+  const otherKeys = await vc.deriveKeys('ein-voellig-anderes-passwort', salt, { memoryKiB: 32 * 1024, passes: 2, parallelism: 1 });
+  let wrongPasswordRejected = false;
+  try {
+    backup.decryptBackup(otherKeys.encKey, reread);
+  } catch {
+    wrongPasswordRejected = true;
+  }
+  check('Ein fremdes Master-Passwort kann das Backup nicht öffnen', wrongPasswordRejected);
   fs.rmSync(backupDir, { recursive: true, force: true });
+
+  const { mergeBackupVault, emptyVault: freshVault } = require('../src/main/vault');
+  const deletedAt = new Date().toISOString();
+  const running = {
+    ...freshVault(),
+    identity: { kemPublic: 'aktuell', kemPrivate: 'aktuell-priv', createdAt: '2026-08-01T00:00:00.000Z' },
+    bookmarks: [{ id: 'lokal', url: 'https://lokal.example', updatedAt: deletedAt }],
+    tabs: [{ id: 'offen', url: 'https://offen.example', deviceId: 'dieses-geraet', updatedAt: deletedAt }],
+    tombstones: [{ id: 'geloescht', deletedAt }],
+    settings: { ...freshVault().settings, searchEngine: 'startpage' },
+  };
+  const fromBackup = {
+    identity: { kemPublic: 'alt', kemPrivate: 'alt-priv', createdAt: '2020-01-01T00:00:00.000Z' },
+    bookmarks: [
+      { id: 'geloescht', url: 'https://geloescht.example', updatedAt: '2026-08-02T00:00:00.000Z' },
+      { id: 'neu', url: 'https://neu.example', updatedAt: '2026-08-02T00:00:00.000Z' },
+    ],
+    tabs: [{ id: 'gesichert', url: 'https://gesichert.example', deviceId: 'dieses-geraet', updatedAt: '2026-08-02T00:00:00.000Z' }],
+    notes: [{ id: 'notiz', text: 'aus dem Backup', updatedAt: '2026-08-02T00:00:00.000Z' }],
+    tombstones: [{ id: 'geloescht', deletedAt }],
+    settings: { searchEngine: 'google' },
+  };
+
+  const mergedData = mergeBackupVault(running, fromBackup, { deviceId: 'dieses-geraet', withSettings: false });
+  check('Importiertes Lesezeichen landet im Vault',
+    mergedData.bookmarks.some((b) => b.id === 'neu'));
+  check('Ein hier gelöschter Eintrag wird nicht wiederbelebt',
+    !mergedData.bookmarks.some((b) => b.id === 'geloescht'));
+  check('Vorhandene Einträge bleiben erhalten',
+    mergedData.bookmarks.some((b) => b.id === 'lokal') && mergedData.notes.some((n) => n.id === 'notiz'));
+  check('Die aktuelle Inbox-Identität wird nicht auf die ältere zurückgedreht',
+    mergedData.identity.kemPrivate === 'aktuell-priv');
+  check('Gesicherte Tabs dieses Geräts werden als eigenes Gerät geführt',
+    mergedData.tabs.find((t) => t.id === 'gesichert')?.deviceId === 'backup');
+  check('Der aktuell offene Tab behält sein Gerät',
+    mergedData.tabs.find((t) => t.id === 'offen')?.deviceId === 'dieses-geraet');
+  check('Doppelte Tombstones werden zusammengefasst',
+    mergedData.tombstones.filter((t) => t.id === 'geloescht').length === 1);
+  check('Ohne Zustimmung bleiben die Einstellungen unverändert',
+    mergedData.settings.searchEngine === 'startpage');
+
+  const withSettings = mergeBackupVault(running, fromBackup, { deviceId: 'dieses-geraet', withSettings: true });
+  check('Mit Zustimmung kommen die Einstellungen aus dem Backup',
+    withSettings.settings.searchEngine === 'google' && withSettings.settings.autoLockMinutes === 15);
+
+  // mergeVaults vereinigt beide Tombstone-Listen. Ohne Dedup waechst sie bei zwei
+  // aktiven Geraeten mit jeder Runde (|local|+|remote|), sprengt das 8-MB-Limit des
+  // Servers und der 413 laesst das Geraet nie wieder pushen.
+  const { mergeVaults: rawMerge } = require('../src/main/vault');
+  const oneStone = { id: 'weg', deletedAt: new Date().toISOString() };
+  let devA = { ...freshVault(), tombstones: [oneStone] };
+  let devB = { ...freshVault(), tombstones: [oneStone] };
+  for (let round = 0; round < 14; round++) {
+    devB = rawMerge(devB, devA);
+    devA = rawMerge(devA, devB);
+  }
+  check('Wiederholtes Zusammenführen vervielfacht Tombstones nicht',
+    devA.tombstones.length === 1, String(devA.tombstones.length) + ' nach 14 Runden');
+
+  const twice = mergeBackupVault(mergedData, fromBackup, { deviceId: 'dieses-geraet', withSettings: false });
+  check('Ein zweiter Import ändert nichts mehr',
+    twice.bookmarks.length === mergedData.bookmarks.length &&
+    twice.tabs.length === mergedData.tabs.length &&
+    twice.tombstones.length === mergedData.tombstones.length);
+
+  const brokenBackup = { tabs: 'kein Array', bookmarks: [{ ohneId: true }], settings: 'auch kein Objekt' };
+  let survivedGarbage = true;
+  let repaired = null;
+  try {
+    repaired = mergeBackupVault(running, brokenBackup, { deviceId: 'dieses-geraet', withSettings: true });
+  } catch {
+    survivedGarbage = false;
+  }
+  check('Ein strukturell kaputtes Backup reisst den Merge nicht ab',
+    survivedGarbage && repaired?.bookmarks.length === 1 && repaired.tabs.length === 1);
+
+  // Ein Backup ist als Ganzes authentifiziert, aber strukturell ungeprueft. Items
+  // ohne brauchbares updatedAt gewinnen in mergeList jeden Vergleich (NaN), und
+  // Tabs ohne deviceId lassen die Geraeteliste im Renderer auflaufen.
+  const sloppy = {
+    bookmarks: [
+      { id: 'lokal', url: 'https://alt.example', title: 'alter Stand' },
+      { id: 'ohnezeit', url: 'https://ohnezeit.example', updatedAt: 'gestern' },
+    ],
+    tabs: [{ id: 'ohnegeraet', url: 'https://ohnegeraet.example', updatedAt: '2026-08-02T00:00:00.000Z' }],
+  };
+  const normalised = mergeBackupVault(running, sloppy, { deviceId: 'dieses-geraet', withSettings: false });
+  check('Ein Backup-Eintrag ohne gültiges updatedAt überschreibt den neueren lokalen nicht',
+    normalised.bookmarks.find((b) => b.id === 'lokal')?.url === 'https://lokal.example');
+  check('Er wird trotzdem übernommen, wenn es lokal nichts gibt',
+    normalised.bookmarks.some((b) => b.id === 'ohnezeit'));
+  check('Ein Tab ohne deviceId bekommt eins, statt die Geräteliste zu sprengen',
+    typeof normalised.tabs.find((t) => t.id === 'ohnegeraet')?.deviceId === 'string');
+
+  const { SyncEngine } = require('../src/main/sync');
+  const engine = new SyncEngine({}, keys, () => {}, () => {});
+  engine.vault = { ...freshVault(), identity, bookmarks: [{ id: 'schonda', url: 'https://x.example', updatedAt: deletedAt }] };
+  const foreign = await engine.applyInboxEntries([
+    { id: 'schonda', sealed: { v: 2 }, createdAt: deletedAt },
+    { id: 'fremd', sealed: { v: 2, epk: 'AA==', kemCt: 'AA==', iv: 'AA==', ct: 'AA==', tag: 'AA==' }, createdAt: deletedAt },
+  ]);
+  // Ein Eintrag muss erst entsiegelbar sein, bevor er ueberhaupt betrachtet wird:
+  // was dieses Konto nicht lesen kann, wird auch nicht auf dem Server geloescht.
+  check('Nicht entsiegelbare Inbox-Einträge werden weder übernommen noch gelöscht',
+    foreign.applied === 0 && foreign.deletable.length === 0);
+  check('Der Vault bleibt dabei unverändert', engine.vault.bookmarks.length === 1);
 
   // --- optional server URL --------------------------------------------------
   console.log('\nGemerkte Server-Adresse');
