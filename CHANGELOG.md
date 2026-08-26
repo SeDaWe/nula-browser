@@ -34,6 +34,14 @@ Alle nennenswerten Änderungen an Nula.
 - Schlafende Tabs behalten den Titel aus dem Vault, statt als Reihe gleicher „Neuer Tab"
   dazustehen, und sind etwas blasser gezeichnet
 
+### Werkstatt
+- **Ein einzelner Asset-Upload reißt nicht mehr den ganzen Release mit.** Ein Lauf lief in
+  `HTTP 400` von `uploads.github.com`; weil die Dateien Teil von `gh release create` waren,
+  nahm gh den fertig gebauten Release komplett zurück. Jetzt entsteht erst ein **Entwurf**,
+  die Dateien gehen einzeln und mit drei Versuchen hoch, und erst wenn alle oben liegen, wird
+  er sichtbar. Nebeneffekt: `latest.yml` ist nie sichtbar, während die Installer noch laden —
+  vorher hätte ein Update in diesem Fenster auf halbe Dateien zeigen können
+
 ### Tests
 - 28 neue Prüfungen, zusammen 183. Zertifikate werden gegen eine **echte** HTTPS-Verbindung
   geprüft: Aussteller, Laufzeit, Fingerabdruck, anerkannte Wurzel

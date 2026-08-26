@@ -153,8 +153,34 @@ jobs:
           set -e
           VERSION="${{ needs.check.outputs.version }}"
           ls -la artifacts
+          # Erst als Entwurf anlegen. Waere latest.yml schon sichtbar, waehrend
+          # die Installer noch hochladen, schickte das electron-updater auf
+          # halbe Dateien.
           gh release create "v$VERSION" \
+            --draft \
             --target main \
             --title "Nula $VERSION" \
-            --notes-file notes.md \
-            artifacts/*
+            --notes-file notes.md
+
+          # Einzeln hochladen, mit Wiederholung. Ein Upload lief schon in einen
+          # HTTP 400 von uploads.github.com; als Teil von "release create" riss
+          # das den ganzen Release mit, und gh nahm ihn wieder zurueck.
+          for datei in artifacts/*; do
+            hoch=0
+            for versuch in 1 2 3; do
+              if gh release upload "v$VERSION" "$datei" --clobber; then
+                echo "hochgeladen: $(basename "$datei")"
+                hoch=1
+                break
+              fi
+              echo "Versuch $versuch fehlgeschlagen: $(basename "$datei")"
+              sleep $((versuch * 15))
+            done
+            if [ "$hoch" != "1" ]; then
+              echo "Nach drei Versuchen aufgegeben: $datei"
+              exit 1
+            fi
+          done
+
+          # Erst wenn alles oben liegt, wird der Release sichtbar.
+          gh release edit "v$VERSION" --draft=false --latest
