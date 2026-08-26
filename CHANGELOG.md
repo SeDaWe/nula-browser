@@ -2,6 +2,50 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.13.0] - 2026-08-26
+
+### Korrekturen
+- **Die Popup-Sperre aus 2.12 hat den eigentlichen Pop-under nicht erwischt.** Der Entwurf
+  hatte ein Loch, das erst im Alltag auffiel: die Klick-Berechtigung geht an das **erste**
+  Fenster — und genau das ist bei einem Pop-under die Werbung. Der eigentliche Link ist gar
+  kein zweites Fenster, sondern eine ganz normale Navigation im selben Tab. Die Regel
+  „höchstens ein Fenster pro Klick" lief damit ins Leere: es gab ja nur eines
+- Was den Fall wirklich verrät, ist die Gleichzeitigkeit — ein Fenster geht auf **und** der
+  öffnende Tab navigiert im selben Wimpernschlag. Ein ehrliches `target="_blank"` tut das
+  nicht, dort bleibt die Ausgangsseite stehen. Ein Fenster von einer noch unbekannten Seite
+  wird deshalb 400 ms zurückgehalten. Navigiert der Opener in dieser Zeit, fällt es weg und
+  die Seite ist für den Rest der Sitzung als Pop-under-Seite vermerkt, ab dann ohne
+  Wartezeit. Bleibt der Opener stehen, gilt die Seite als unauffällig und öffnet ab dann
+  sofort. Die 400 ms fallen also einmal pro Seite an, nicht bei jedem Fenster
+- **Mittelklick und Strg-Klick sprangen in den neuen Tab.** `setWindowOpenHandler` bekommt
+  von Chromium eine `disposition`, und die wurde schlicht ignoriert: jeder so geöffnete Tab
+  ging über `create()` mit der Voreinstellung `activate: true`. Jetzt öffnet
+  `background-tab` daneben und lässt den Fokus, wo er war
+- Dieselbe Disposition ist nebenbei ein fälschungssicherer Beleg für eine bewusste
+  Entscheidung: `window.open()` kann sie nicht erzeugen, es liefert immer `foreground-tab`
+  oder `new-window`. Mittelklick und Strg-Klick brauchen deshalb weder Rückhalt noch
+  Klick-Prüfung — nur ins Werbenetz kommen auch sie nicht
+- Ein Hintergrund-Tab bekam seine Größe nie gesetzt, weil `layout()` bisher nur über
+  `activate()` lief
+
+### Tests
+- 12 neue Prüfungen, zusammen 114. Darunter der vollständige Pop-under im echten Tab: ein per
+  `sendInputEvent` wirklich zugestellter Klick auf einen echten Link, dessen Handler ein
+  `window.open()` absetzt, während der Link selbst navigiert — das Werbefenster muss wegfallen
+  und die Seite vermerkt werden. Dazu ein echter Mittelklick auf einen echten Link, der einen
+  Tab im Hintergrund ergeben muss
+- Der Integrationstest bricht jetzt sichtbar ab, wenn der Testcode selbst stolpert. Bis eben
+  blieb er in so einem Fall stumm mit offenem Electron-Fenster stehen, was genau einmal
+  passiert ist: `executeJavaScript` wertet im globalen Scope aus, ein zweites `const a` ist
+  dort ein `SyntaxError`
+- Der Smoke-Test läuft jetzt in einem eigenen Wegwerf-Profil statt im gemeinsamen
+  Electron-Profil des Rechners (in diesem Projekt ein schlechter Witz), rendert in Software
+  statt über die GPU, gibt `capturePage()` eine Frist von 15 Sekunden und hat eine Notbremse
+  nach 90 Sekunden. **Ausgeführt werden konnte er in dieser Sitzung nicht:** der
+  GPU-/Viz-Prozess dieses Rechners ist beschädigt (`UnknownVizError`), und auch die
+  unveränderte Fassung aus 2.12 hängt darin. Die Änderungen dieser Version betreffen keine
+  Datei der Oberfläche
+
 ## [2.12.0] - 2026-08-26
 
 ### Neu

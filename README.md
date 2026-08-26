@@ -429,27 +429,48 @@ führt Nula sie in `src/main/popupguard.js` selbst — gespeist aus dem `input-e
 WebContents, das nur bei echter Eingabe feuert und bei einem per Skript ausgelösten
 `element.click()` nie ankommt.
 
-Vier Regeln, in dieser Reihenfolge:
+Das allein reicht aber nicht, und in 2.12 tat es das auch nicht: die Berechtigung geht an das
+**erste** Fenster des Klicks, und genau das ist beim Pop-under die Werbung. Der eigentliche
+Link ist gar kein zweites Fenster, sondern eine ganz normale Navigation im selben Tab.
+
+Was den Fall wirklich verrät, ist die Gleichzeitigkeit: ein Fenster geht auf **und** der
+öffnende Tab navigiert im selben Wimpernschlag. Ein ehrliches `target="_blank"` tut das
+nicht, dort bleibt die Ausgangsseite stehen. Deshalb hält Nula ein Fenster von einer noch
+unbekannten Seite 400 ms zurück:
+
+- Navigiert der Opener in dieser Zeit → Pop-under. Das Fenster fällt weg, und die Seite ist
+  für den Rest der Sitzung als Pop-under-Seite vermerkt — ab dann ohne Wartezeit.
+- Bleibt der Opener stehen → die Seite gilt als unauffällig und öffnet ab dann sofort.
+
+Die 400 ms fallen also **einmal pro Seite** an, nicht bei jedem Fenster.
+
+Die vollständige Reihenfolge:
 
 | # | Bedingung | Ergebnis |
 |---|---|---|
 | 1 | Ziel ist ein bekanntes Werbe- oder Pop-under-Netz | immer blockiert |
-| 2 | Popup-Sperre aus, oder die öffnende Seite ist freigestellt | durchgelassen |
-| 3 | Kein Klick und kein Tastendruck in der letzten Sekunde | blockiert |
-| 4 | Die Eingabe hat ihr Fenster schon bekommen | blockiert |
+| 2 | Popup-Sperre aus, oder öffnende Seite freigestellt | durchgelassen |
+| 3 | Mittelklick oder Strg-Klick | durchgelassen, ohne Rückhalt |
+| 4 | Öffnende Seite ist schon als Pop-under aufgefallen | blockiert |
+| 5 | Kein Klick und kein Tastendruck in der letzten Sekunde | blockiert |
+| 6 | Die Eingabe hat ihr Fenster schon bekommen | blockiert |
+| 7 | sonst | durchgelassen, bei unbekannter Seite mit Rückhalt |
 
-Regel 4 ist der eigentliche Pop-under-Fall: zwei Fenster aus einem Klick. Regel 3 fängt
-alles, was ein Timer aufmacht.
+Regel 3 verdient eine Erklärung: Chromium meldet für Mittelklick und Strg-Klick die
+Disposition `background-tab`, und die kann eine Seite nicht erzeugen — `window.open()`
+liefert immer `foreground-tab` oder `new-window`. Sie ist damit ein fälschungssicherer Beleg
+für eine bewusste Entscheidung. Solche Tabs öffnen daneben, **ohne** den Fokus mitzunehmen.
 
 Der normale Fall bleibt unberührt. Ein `target="_blank"` auf einen angeklickten Link ist
-Regel 4 mit genau einem Fenster und geht durch — Anmeldefenster von Banken oder
+Regel 7 mit genau einem Fenster und geht durch — Anmeldefenster von Banken oder
 Single-Sign-On also auch.
 
 **Nichts davon ist endgültig.** Jedes blockierte Fenster meldet sich unten mit seiner Adresse
 und einem Knopf **Trotzdem öffnen**. Wer den drückt, bekommt das Fenster, und die Seite, die
-es wollte, darf bis zum nächsten Sperren ohne Rückfrage weitere öffnen. Bekannte Werbenetze
-bleiben auch dann gesperrt: freigestellt wird die Seite, nicht ihr Werbepartner. Die
-Ausnahmeliste liegt nur im Arbeitsspeicher und wird beim Sperren geleert.
+es wollte, darf bis zum nächsten Sperren ohne Rückfrage weitere öffnen — das sticht auch
+einen Pop-under-Vermerk. Bekannte Werbenetze bleiben trotzdem gesperrt: freigestellt wird die
+Seite, nicht ihr Werbepartner. Die Ausnahmeliste liegt nur im Arbeitsspeicher und wird beim
+Sperren geleert.
 
 Unter Einstellungen stehen beide Zähler: blockierte Anfragen und blockierte Fenster.
 

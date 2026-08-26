@@ -9,6 +9,7 @@
 const { WebContentsView, shell } = require('electron');
 const path = require('node:path');
 const { isSafeNavigationUrl, NEW_TAB } = require('./urls');
+const { HOLD_MS } = require('./popupguard');
 
 const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with renderer CSS
 const PANEL_WIDTH = 384; // .panel in the renderer CSS, keep in sync
@@ -22,6 +23,8 @@ class TabManager {
     // bleibt; fehlt er, verhaelt sich alles wie vorher.
     this.guard = guard;
     this.onBlocked = onBlocked;
+    // Zurueckgehaltene Fenster je Tab, siehe holdPopup().
+    this.heldPopups = new Map(); // tabId -> [{ timer, url, opts }]
     this.tabs = new Map(); // id -> { id, view, url, title, loading, canGoBack, canGoForward, pinned }
     this.order = [];
     this.activeId = null;
@@ -156,7 +159,11 @@ class TabManager {
       if (this.guard && this.guard.blocksNavigation(target)) {
         event.preventDefault();
         this.onBlocked({ url: target, reason: 'ad', detail: 'Werbenetzwerk', kind: 'navigation' });
+        return;
       }
+      // Der Opener navigiert selbst, waehrend ein Fenster zurueckgehalten wird:
+      // das ist die Signatur eines Pop-unders.
+      this.dropHeldPopups(id, tab.url);
     };
     wc.on('will-navigate', guardNavigation);
     wc.on('will-redirect', guardNavigation);
@@ -175,16 +182,22 @@ class TabManager {
     }
 
     // Popups open as regular tabs; external protocols never touch the OS silently.
-    wc.setWindowOpenHandler(({ url: target }) => {
+    wc.setWindowOpenHandler(({ url: target, disposition }) => {
       if (!isSafeNavigationUrl(target) || target === NEW_TAB) return { action: 'deny' };
+      // Mittelklick und Strg-Klick sollen im Hintergrund landen, so wie ueberall.
+      const background = disposition === 'background-tab';
       if (this.guard) {
-        const verdict = this.guard.decide(id, { url: target, openerUrl: tab.url });
+        const verdict = this.guard.decide(id, { url: target, openerUrl: tab.url, disposition });
         if (!verdict.allow) {
           this.onBlocked({ url: target, ...verdict, kind: 'popup', openerUrl: tab.url });
           return { action: 'deny' };
         }
+        if (verdict.hold) {
+          this.holdPopup(id, target, { background, openerUrl: tab.url });
+          return { action: 'deny' };
+        }
       }
-      this.emitNewTabRequest(target);
+      this.emitNewTabRequest(target, { background });
       return { action: 'deny' };
     });
 
@@ -194,14 +207,56 @@ class TabManager {
       callback(allowed.includes(permission));
     });
 
+    // Ohne activate() liefe layout() nie, und die neue View behielte ihre
+    // Standardgroesse statt der Null-Groesse eines Hintergrund-Tabs.
     if (activate) this.activate(id);
+    else this.layout();
     this.navigate(id, initialUrl);
     this.emit();
     return tab;
   }
 
-  emitNewTabRequest(url) {
-    if (this.newTabRequestHandler) this.newTabRequestHandler(url);
+  emitNewTabRequest(url, opts = {}) {
+    if (this.newTabRequestHandler) this.newTabRequestHandler(url, opts);
+  }
+
+  /*
+   * Ein Fenster von einem Host, ueber den der Waechter noch nichts weiss, wird
+   * kurz zurueckgehalten. Navigiert der oeffnende Tab in dieser Zeit selbst,
+   * war es ein Pop-under und dropHeldPopups() raeumt es weg. Passiert nichts,
+   * geht es auf und der Host gilt fortan als unauffaellig - die Wartezeit faellt
+   * also nur beim ersten Fenster einer Seite an.
+   */
+  holdPopup(tabId, url, opts) {
+    const entry = { url, opts, timer: null };
+    entry.timer = setTimeout(() => {
+      const list = (this.heldPopups.get(tabId) || []).filter((e) => e !== entry);
+      if (list.length) this.heldPopups.set(tabId, list);
+      else this.heldPopups.delete(tabId);
+      if (this.guard) this.guard.confirmBenign(opts.openerUrl);
+      this.emitNewTabRequest(url, opts);
+    }, HOLD_MS);
+    this.heldPopups.set(tabId, [...(this.heldPopups.get(tabId) || []), entry]);
+  }
+
+  /** @param {string|null} openerUrl Gesetzt, wenn es als Pop-under zaehlen soll. */
+  dropHeldPopups(tabId, openerUrl = null) {
+    const list = this.heldPopups.get(tabId);
+    if (!list || !list.length) return;
+    this.heldPopups.delete(tabId);
+    for (const entry of list) {
+      clearTimeout(entry.timer);
+      if (!openerUrl) continue;
+      const host = this.guard ? this.guard.markPopunder(openerUrl) : null;
+      if (this.guard) this.guard.stats.popups++;
+      this.onBlocked({
+        url: entry.url,
+        reason: 'popunder',
+        detail: host ? `Pop-under von ${host}` : 'Pop-under',
+        kind: 'popup',
+        openerUrl,
+      });
+    }
   }
 
   activate(id) {
@@ -242,6 +297,7 @@ class TabManager {
     this.win.contentView.removeChildView(tab.view);
     tab.view.webContents.close();
     this.tabs.delete(id);
+    this.dropHeldPopups(id);
     if (this.guard) this.guard.forget(id);
     this.order = this.order.filter((t) => t !== id);
     if (this.activeId === id) {

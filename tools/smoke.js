@@ -17,7 +17,38 @@ process.env.NULA_SMOKE = '1';
 const SHOTS = path.join(__dirname, 'shots');
 fs.mkdirSync(SHOTS, { recursive: true });
 
+const os = require('node:os');
+const crypto = require('node:crypto');
+
 const { app, BrowserWindow, ipcMain } = require('electron');
+
+/*
+ * Software-Rendering. capturePage() haengt am Viz-Compositor, und ein
+ * angeschlagener GPU-Prozess laesst den ganzen Lauf stumm stehenbleiben
+ * (UnknownVizError, oder gar keine Antwort). Fuer Screenshots einer statischen
+ * Oberflaeche bringt die GPU nichts, also wird sie hier gar nicht erst
+ * gebraucht - das macht den Test auf jedem Rechner und in CI reproduzierbar.
+ */
+app.disableHardwareAcceleration();
+
+/*
+ * Eigenes Wegwerf-Profil, aus zwei Gruenden. Erstens schrieb der Smoke-Test
+ * sonst in das gemeinsame Electron-Profil des Rechners, was in genau diesem
+ * Projekt ein schlechter Witz waere. Zweitens teilt er sich damit keinen Lock
+ * mehr mit anderen Electron-Laeufen: ein haengengebliebener Prozess liess den
+ * naechsten Start sonst stumm blockieren.
+ */
+const RUN_PROFILE = path.join(os.tmpdir(), `nula-smoke-${crypto.randomBytes(5).toString('hex')}`);
+fs.mkdirSync(RUN_PROFILE, { recursive: true });
+app.setPath('userData', RUN_PROFILE);
+app.setPath('sessionData', RUN_PROFILE);
+
+// Ein Fehler im Testcode selbst soll sichtbar abbrechen, statt mit offenem
+// Fenster stehenzubleiben.
+process.on('unhandledRejection', (err) => {
+  console.log(`FEHLER Der Smoke-Test selbst ist abgebrochen -> ${err && err.message ? err.message : err}`);
+  app.exit(1);
+});
 
 const problems = [];
 
@@ -189,6 +220,11 @@ app.whenReady().then(async () => {
   problems.forEach((p) => console.log(`  - ${p}`));
   console.log(`Screenshots: ${SHOTS}\n`);
 
+  try {
+    fs.rmSync(RUN_PROFILE, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  } catch {
+    /* Chromium haelt unter Windows noch Handles; der Ordner liegt im Temp-Verzeichnis */
+  }
   app.exit(problems.length ? 1 : 0);
 });
 
@@ -202,7 +238,25 @@ async function shoot(win, name) {
     `new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`
   );
   await pause(120);
-  const image = await win.webContents.capturePage();
+  /*
+   * capturePage() haengt, wenn das Fenster gerade nicht zusammengesetzt wird -
+   * verdeckt, ausserhalb des Bildschirms, gesperrter Desktop. Ohne Frist stand
+   * der ganze Lauf dann stumm mit offenem Fenster da. Lieber ein gemeldeter
+   * Fehlschlag als kein Ergebnis.
+   */
+  const image = await Promise.race([
+    win.webContents.capturePage(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('capturePage antwortet nicht')), 15000)
+    ),
+  ]).catch((err) => {
+    problems.push(`${name}: ${err.message}`);
+    return null;
+  });
+  if (!image) {
+    console.log(`  FEHLER ${name}.png nicht aufgenommen`);
+    return;
+  }
   fs.writeFileSync(path.join(SHOTS, `${name}.png`), image.toPNG());
   console.log(`  gespeichert ${name}.png`);
 }

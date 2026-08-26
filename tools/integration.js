@@ -50,6 +50,16 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'nula', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+/*
+ * Ohne das bleibt ein Fehler im Testcode selbst unsichtbar: die async-Kette
+ * bricht ab, app.exit() wird nie erreicht, und das Electron-Fenster steht bis
+ * jemand es abschiesst.
+ */
+process.on('unhandledRejection', (err) => {
+  console.log(`\n  FAIL Der Test selbst ist abgebrochen -> ${err && err.message ? err.message : err}`);
+  app.exit(1);
+});
+
 app.whenReady().then(async () => {
   console.log('\nNula Electron-Integrationstest\n');
 
@@ -159,6 +169,42 @@ app.whenReady().then(async () => {
       !g.decide('t3', { url: 'nula://newtab' }).allow);
     check('Fremde Schemata werden abgewiesen',
       !g.decide('t3', { url: 'javascript:alert(1)' }).allow);
+
+    // Mittelklick und Strg-Klick: 'background-tab' kann window.open() nicht
+    // erzeugen, also ist die Disposition ein Beleg fuer eine echte Absicht.
+    check('Mittelklick braucht keinen erfassten Klick',
+      g.decide('t4', { url: 'https://ziel.example.net/', openerUrl: SITE,
+        disposition: 'background-tab' }).allow);
+    check('Mittelklick wird nicht zurueckgehalten',
+      !g.decide('t4', { url: 'https://ziel.example.net/', openerUrl: SITE,
+        disposition: 'background-tab' }).hold);
+    check('Auch der Mittelklick kommt nicht ins Werbenetz',
+      !g.decide('t4', { url: 'https://popads.net/x', openerUrl: SITE,
+        disposition: 'background-tab' }).allow);
+
+    // Der Ruf einer Seite: unbekannt -> Rueckhalt, unauffaellig -> sofort,
+    // Pop-under -> gesperrt.
+    const RUF = 'https://ruf.example.org/seite';
+    g.noteGesture('t5');
+    const ersteEntscheidung = g.decide('t5', { url: 'https://ziel.example.net/', openerUrl: RUF });
+    check('Das erste Fenster einer unbekannten Seite wird zurueckgehalten',
+      ersteEntscheidung.allow && ersteEntscheidung.hold === true);
+
+    g.confirmBenign(RUF);
+    g.noteGesture('t5');
+    check('Eine unauffaellige Seite oeffnet danach ohne Wartezeit',
+      g.decide('t5', { url: 'https://ziel.example.net/', openerUrl: RUF }).hold === false);
+
+    const BOESE = 'https://boese.example.org/seite';
+    g.markPopunder(BOESE);
+    g.noteGesture('t6');
+    check('Eine als Pop-under aufgefallene Seite wird gesperrt',
+      g.decide('t6', { url: 'https://ziel.example.net/', openerUrl: BOESE }).reason === 'popunder');
+    check('Der Vermerk gilt nur fuer diese Seite',
+      g.decide('t6', { url: 'https://ziel.example.net/', openerUrl: RUF }).allow);
+    g.allowOpener(BOESE);
+    check('"Trotzdem oeffnen" sticht den Pop-under-Vermerk',
+      g.decide('t6', { url: 'https://ziel.example.net/', openerUrl: BOESE }).allow);
   }
 
   // --- window and tabs -----------------------------------------------------
@@ -179,7 +225,7 @@ app.whenReady().then(async () => {
     guard: liveGuard,
     onBlocked: (info) => blockedPopups.push(info),
   });
-  tabs.newTabRequestHandler = (url) => openedByPage.push(url);
+  tabs.newTabRequestHandler = (url, opts = {}) => openedByPage.push({ url, opts });
 
   const idA = newId();
   tabs.create(idA, 'nula://newtab');
@@ -211,6 +257,27 @@ app.whenReady().then(async () => {
     await pause(300);
     const wc = tabs.tabs.get(idA).view.webContents;
     wc.focus();
+
+    // Einen echten Link einbauen, auf den sich wirklich klicken laesst.
+    // Die Klammer ist noetig: executeJavaScript wertet im globalen Scope aus, ein
+    // zweites "const a" waere dort ein SyntaxError.
+    const link = (href, extra) => wc.executeJavaScript(`(() => {
+      document.body.innerHTML = '';
+      const a = document.createElement('a');
+      a.id = 'ziel';
+      a.href = ${JSON.stringify(href)};
+      a.textContent = 'Link';
+      a.style.cssText = 'position:fixed;left:0;top:0;width:600px;height:300px;background:#333';
+      ${extra || ''}
+      document.body.appendChild(a);
+      return true;
+    })()`);
+    const clickLink = async (button) => {
+      wc.sendInputEvent({ type: 'mouseDown', x: 80, y: 80, button, clickCount: 1 });
+      wc.sendInputEvent({ type: 'mouseUp', x: 80, y: 80, button, clickCount: 1 });
+      await pause(700); // laenger als HOLD_MS
+    };
+
     // executeJavaScript(code, true) setzt zwar die user activation der Seite,
     // erzeugt aber kein Eingabeereignis - fuer den Waechter ist das also
     // weiterhin ein Fenster, das niemand angeklickt hat.
@@ -230,19 +297,37 @@ app.whenReady().then(async () => {
     check('input-event meldet echte Eingaben an den Waechter', sawInputEvent);
 
     await wc.executeJavaScript(`window.open('https://ziel.example.net/', '_blank')`, true).catch(() => {});
-    await pause(200);
+    await pause(700);
     check('Nach echtem Klick darf ein Fenster aufgehen',
-      openedByPage.length === 1 && openedByPage[0] === 'https://ziel.example.net/',
+      openedByPage.length === 1 && openedByPage[0].url === 'https://ziel.example.net/',
       JSON.stringify(openedByPage));
+    check('Es kommt im Vordergrund', openedByPage[0].opts.background === false);
 
-    await wc.executeJavaScript(`window.open('https://werbung.example.net/', '_blank')`, true).catch(() => {});
-    await pause(200);
-    check('Das zweite Fenster zum selben Klick bleibt zu',
-      openedByPage.length === 1 && blockedPopups.at(-1)?.reason === 'burst',
-      JSON.stringify(blockedPopups.at(-1)));
+    // --- Mittelklick: neuer Tab, aber der Fokus bleibt hier -----------------
+    openedByPage.length = 0;
+    await link('https://mittel.example.net/');
+    await clickLink('middle');
+    check('Mittelklick oeffnet einen Tab',
+      openedByPage.length === 1 && openedByPage[0].url === 'https://mittel.example.net/',
+      JSON.stringify(openedByPage));
+    check('Mittelklick laesst den Fokus im aktuellen Tab',
+      openedByPage[0]?.opts.background === true, JSON.stringify(openedByPage[0]?.opts));
 
-    check('Der Waechter merkt sich die blockierte Adresse',
-      blockedPopups.at(-1)?.url === 'https://werbung.example.net/');
+    // --- Pop-under: Fenster auf UND der Opener navigiert mit ----------------
+    openedByPage.length = 0;
+    blockedPopups.length = 0;
+    liveGuard.reputation.clear();
+    await link(TARGET, `a.addEventListener('click', () => window.open('https://werbung.example.net/', '_blank'));`);
+    await clickLink('left');
+    check('Das Werbefenster zum navigierenden Klick faellt weg',
+      openedByPage.length === 0, JSON.stringify(openedByPage));
+    check('Es wird als Pop-under gemeldet',
+      blockedPopups.at(-1)?.reason === 'popunder', JSON.stringify(blockedPopups.at(-1)));
+    // Vermerkt wird der Opener zum Zeitpunkt des Klicks, also die Seite, auf der
+    // der Tab noch stand - nicht das Ziel, auf das er gerade navigiert.
+    check('Die Seite ist jetzt als Pop-under-Seite vermerkt',
+      liveGuard.reputationOf('nula://newtab') === 'popunder',
+      JSON.stringify([...liveGuard.reputation]));
 
     // Der Layout-Test danach erwartet idB als aktiven Tab.
     tabs.activate(idB);

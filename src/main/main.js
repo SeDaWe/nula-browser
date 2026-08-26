@@ -507,8 +507,10 @@ async function connectAndUnlock({ serverUrl, password, setupToken, rememberUrl }
       guard: state.popupGuard,
       onBlocked: (info) => reportBlockedPopup(info),
     });
-    state.tabs.newTabRequestHandler = (target) => {
-      state.tabs.create(newId(), target);
+    // background: Mittelklick und Strg-Klick oeffnen daneben, ohne den Fokus
+    // mitzunehmen.
+    state.tabs.newTabRequestHandler = (target, opts = {}) => {
+      state.tabs.create(newId(), target, { activate: !opts.background });
     };
     state.tabs.setVisible(true);
     restoreTabsFromVault();
