@@ -89,7 +89,10 @@ jobs:
         shell: bash
         run: |
           set -e
-          npx asar list dist/win-unpacked/resources/app.asar | grep -q 'filters/engine.bin'
+          # asar list gibt unter Windows Backslashes aus, also nicht auf den
+          # Pfadtrenner festlegen.
+          npx asar list dist/win-unpacked/resources/app.asar > asar.txt
+          grep -i 'engine\.bin' asar.txt || { echo "engine.bin fehlt im Paket:"; grep -i filters asar.txt || echo "(kein filters-Eintrag)"; exit 1; }
           echo "engine.bin ist im Paket."
       - uses: actions/upload-artifact@v4
         with:
