@@ -18,6 +18,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const https = require('node:https');
 const { FiltersEngine } = require('@ghostery/adblocker');
 
 // Im Kern dieselbe Zusammenstellung, die uBlock Origin voreingestellt hat.
@@ -37,12 +38,55 @@ const LISTS = [
 
 const OUT_DIR = path.join(__dirname, '..', 'src', 'main', 'filters');
 
+/*
+ * Bewusst node:https statt fetch. Ein Lauf ist an einem undici-Fehler
+ * gestorben - "assert(!this.paused)", geworfen aus einem Socket-Handler
+ * heraus, also nicht einmal von einem try/catch um das await zu fangen. Ein
+ * Netzwerkschluckauf darf keinen Release kosten.
+ */
+function get(url, redirectsLeft = 5) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'user-agent': 'nula-browser build' } }, (res) => {
+      const status = res.statusCode || 0;
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume();
+        if (redirectsLeft <= 0) return reject(new Error('zu viele Weiterleitungen'));
+        return resolve(get(new URL(res.headers.location, url).toString(), redirectsLeft - 1));
+      }
+      if (status !== 200) {
+        res.resume();
+        return reject(new Error(`HTTP ${status}`));
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(60000, () => req.destroy(new Error('Zeitueberschreitung')));
+  });
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchList(name, url) {
-  const res = await fetch(url, { headers: { 'user-agent': 'nula-browser build' } });
-  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  const text = await res.text();
-  if (text.length < 1000) throw new Error(`${name}: verdaechtig kurz (${text.length} Zeichen)`);
-  return text;
+  let last;
+  for (let versuch = 1; versuch <= 4; versuch++) {
+    try {
+      const text = await get(url);
+      // Eine abgeschnittene Liste waere schlimmer als gar keine: sie wuerde
+      // stillschweigend einen Teil der Regeln verlieren.
+      if (text.length < 1000) throw new Error(`verdaechtig kurz (${text.length} Zeichen)`);
+      return text;
+    } catch (err) {
+      last = err;
+      if (versuch < 4) {
+        process.stdout.write(`(Versuch ${versuch}: ${err.message}, neuer Versuch) `);
+        await wait(versuch * 2000);
+      }
+    }
+  }
+  throw new Error(`${name}: ${last.message}`);
 }
 
 async function main() {

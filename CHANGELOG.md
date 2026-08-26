@@ -24,6 +24,13 @@ Alle nennenswerten Änderungen an Nula.
 - Die Rollleiste unter den Tabs ist ausgeblendet: in einer 40 Pixel hohen Leiste wäre sie nur
   im Weg
 
+### Werkstatt
+- **Der Listen-Download hält jetzt einen Netzwerkschluckauf aus.** Ein Release-Lauf starb an
+  `assert(!this.paused)` aus undici heraus — geworfen in einem Socket-Handler, also nicht
+  einmal von einem `try/catch` um das `await` zu fangen. `tools/build-filters.js` benutzt
+  deshalb `node:https` statt `fetch`, mit vier Versuchen und wachsender Pause. Eine einzelne
+  wackelige Verbindung kostet keinen Release mehr
+
 ### Tests
 - 12 neue Prüfungen, zusammen 143. Gemessen wird die echte Oberfläche, nicht ein Bildschirm-
   foto: drei Tabs behalten ihre vollen 190 Pixel und brauchen keine Pfeile, dreißig Tabs
