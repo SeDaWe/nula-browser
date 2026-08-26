@@ -66,6 +66,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Filterlisten holen und uebersetzen
+        # Passiert bewusst hier und nicht zur Laufzeit: der Release bringt die
+        # Listen fertig mit, der Browser des Nutzers laedt nie welche nach.
+        run: npm run filters
       - name: Tests
         if: matrix.test
         run: npm test
@@ -77,6 +81,16 @@ jobs:
         # leeres CSC_LINK behandelt electron-builder als Pfad und bricht mit
         # "not a file" ab. Wie es richtig geht, steht im README unter "Updates".
         run: npm run dist:${{ matrix.target }} -- --publish never
+      - name: Filterlisten sind wirklich im Paket
+        # src/main/filters/ steht in .gitignore. electron-builder wertet die
+        # Datei zwar nicht aus, aber darauf soll sich niemand verlassen muessen:
+        # ohne engine.bin im asar liefe Nula still auf der Rueckfallebene.
+        if: matrix.test
+        shell: bash
+        run: |
+          set -e
+          npx asar list dist/win-unpacked/resources/app.asar | grep -q 'filters/engine.bin'
+          echo "engine.bin ist im Paket."
       - uses: actions/upload-artifact@v4
         with:
           name: nula-${{ matrix.target }}

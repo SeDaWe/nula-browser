@@ -2,6 +2,47 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.14.0] - 2026-08-26
+
+### Neu
+- **Echte Filterlisten statt einer handgepflegten Hostliste.** EasyList, EasyPrivacy,
+  EasyList Germany, uBlock Origins eigene Listen (Filters, Badware, Privacy, Quick Fixes,
+  Unbreak) und Peter Lowes Serverliste — zusammen rund 160.000 Regeln, im Kern dieselbe
+  Zusammenstellung, die uBlock Origin voreingestellt hat
+- **Geladen wird beim Bauen, nicht beim Start.** `npm run filters` holt die Listen,
+  übersetzt sie in eine Engine und legt sie als `src/main/filters/engine.bin` (4,9 MB) neben
+  den Code; die Release-Werkstatt ruft das vor jedem Build auf. Zur Laufzeit stellt Nula für
+  Filter keine einzige Netzwerkanfrage. Damit fällt die Begründung weg, mit der hier bisher
+  auf Listen verzichtet wurde („müssten bei jedem Start nachgeladen werden, und genau dieser
+  Request wäre die erste Spur") — sie galt für Laufzeit-Downloads, nicht für Bauzeit
+- **Kosmetisches Filtern.** Reines Netzwerkblocken lässt leere Kästen stehen. Die Regeln
+  dafür stammen aus denselben Listen und werden pro Seite einmal als CSS eingespritzt
+- Die eingebaute Hostliste bleibt als Rückfallebene, wenn die Engine fehlt. Läuft Nula ohne
+  Listen, steht das sichtbar unter Einstellungen; dort steht sonst, wie viele Regeln aus wie
+  vielen Listen mit welchem Stand greifen
+
+### Korrekturen
+- **Der Popup-Wächter fragt jetzt die Listen, nicht nur die Hostliste.** Pop-under-Netze
+  wechseln ihre Domains ständig — `salutetutortwiddling.com`, `hai8g.com`, `gamazi.com` sind
+  echte Beispiele aus dem Alltag und stehen auf keiner handgepflegten Liste. Auf den
+  Filterlisten stehen sie sehr wohl, alle drei
+- **Ein Fenster ohne Größe löschte die Tab-Ansicht.** Meldet `getContentSize()` kurzzeitig
+  0×0 — minimiert, verborgen, noch nicht vermessen — schrieb `layout()` diese Null in alle
+  Views. Die Seite war damit weg und kam erst beim nächsten Größenwechsel zurück. Jetzt
+  bleiben die alten Größen stehen. Die gewollte Null beim Sperren ist davon nicht betroffen
+- Der Hauptframe wird nicht mehr über `webRequest` abgebrochen, sondern die Navigation
+  angehalten: statt einer Fehlerseite bleibt die Seite einfach stehen
+
+### Tests
+- 131 Prüfungen, alle grün, dreimal hintereinander stabil. Darunter: die drei echten
+  Pop-under-Adressen werden als Werbeziel erkannt **und** die Gegenprobe, dass keine davon in
+  der eingebauten Hostliste steht — die Listen tun also wirklich die Arbeit
+- Dazu die Null-Größe des Fensters: Fenster auf 0×0 setzen, layouten, prüfen, dass die
+  Tab-Ansicht ihre Größe behält
+- Eine Testdomain hieß `werbung.example.net` und wurde plötzlich von EasyList Germany
+  getroffen, was die falsche Regel greifen ließ. Umbenannt, mit Notiz — als Beleg, dass die
+  Listen tun, was sie sollen
+
 ## [2.13.0] - 2026-08-26
 
 ### Korrekturen

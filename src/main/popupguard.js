@@ -160,8 +160,10 @@ class PopupGuard {
     };
 
     // Regel 1: Werbenetz als Ziel. Gilt auch fuer erlaubte Seiten, denn erlaubt
-    // wurde die Seite, nicht das Werbenetz.
-    if (this.adsBlocked() && this.blocker.isAdHost(hostOf(url))) return block('ad');
+    // wurde die Seite, nicht das Werbenetz. Gefragt werden die Filterlisten,
+    // nicht nur die eingebaute Hostliste - Pop-under-Netze wechseln ihre
+    // Domains staendig, und genau dafuer gibt es die Listen.
+    if (this.adsBlocked() && this.blocker.isAdTarget(url, openerUrl)) return block('ad');
 
     // Regel 2: Sperre aus oder Ausnahme fuer diese Seite.
     if (!this.popupsBlocked()) return { allow: true };
@@ -204,10 +206,9 @@ class PopupGuard {
    * Ziel daneben. Nur Pop-under- und Auslieferungsnetze, keine Analyse-Hosts -
    * auf denen landet man ohnehin nie im Hauptframe.
    */
-  blocksNavigation(url) {
+  blocksNavigation(url, sourceUrl = null) {
     if (!this.adsBlocked()) return false;
-    const host = hostOf(url);
-    return !!host && this.blocker.isAdHost(host);
+    return this.blocker.isAdTarget(url, sourceUrl);
   }
 }
 

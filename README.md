@@ -405,20 +405,37 @@ Zwei getrennte Schalter unter **Einstellungen**, beide standardmäßig an.
 
 ### Werbung und Tracker blockieren
 
-Ein Filter auf Netzwerkebene. Requests an bekannte Anzeigen-, Pop-under- und Analyse-Hosts
-werden abgebrochen, bevor eine Verbindung zustande kommt. Die Liste liegt in
-`src/main/blocker.js` und ist in drei Gruppen geteilt: Pop-under-Netze, Anzeigenauslieferung
-und Analyse. Dazu kommen ein paar sehr eng gefasste Pfadmuster für Hosts, auf denen auch
-echte Inhalte liegen — etwa `/pagead/`.
+Zwei Schichten.
 
-Bewusst **keine EasyList-Engine**: Regellisten müssten bei jedem Start nachgeladen werden,
-und genau dieser Request wäre die erste Spur, die Nula hinterlässt. Der Preis dafür ist
-Reichweite. Die eingebaute Liste erwischt die großen Netze zuverlässig, aber nicht jeden
-Selbstbau-Banner einer einzelnen Seite.
+**Die Filterlisten.** Dieselben, die uBlock Origin voreingestellt hat: EasyList, EasyPrivacy,
+EasyList Germany, uBlock Origins eigene Listen (Filters, Badware, Privacy, Quick Fixes,
+Unbreak) und Peter Lowes Serverliste. Zusammen rund 160.000 Regeln, inklusive
+Ausnahmeregeln, die Seiten heil halten, welche eine der Listen zu weit trifft.
 
-Zusätzlich stoppt derselbe Filter eine **Navigation im Hauptframe** auf ein Werbenetz. Das
+Entscheidend ist **wann** sie geladen werden: beim **Bauen**, nicht beim Start.
+`npm run filters` holt die Listen, übersetzt sie in eine Engine und legt sie als
+`src/main/filters/engine.bin` (rund 4,9 MB) neben den Code. Der Release bringt sie fertig
+mit. Zur Laufzeit stellt Nula für Filter **keine einzige Netzwerkanfrage** — der Rechner, der
+den Release baut, darf ins Netz, der Browser auf deinem Rechner muss es nicht. Das war der
+ganze Einwand gegen eine Listen-Engine, und beim Bauen fällt er weg.
+
+Die Kehrseite: die Listen sind so aktuell wie dein letztes Update. Da die Release-Werkstatt
+sie vor jedem Build frisch holt, bedeutet jedes Nula-Update auch frische Filter.
+
+Dazu kommt **kosmetisches Filtern**: reines Netzwerkblocken lässt leere Kästen stehen, die
+Seite sieht danach kaputt aus. Die Regeln dafür stammen aus denselben Listen und werden pro
+Seite einmal als CSS eingespritzt.
+
+**Die eingebaute Hostliste** (`src/main/blocker.js`, 176 Hosts in drei Gruppen) bleibt als
+Rückfallebene. Sie greift, wenn die Engine fehlt — etwa in einem frischen Checkout, in dem
+`npm run filters` noch nicht lief — und dient dem Popup-Wächter als schnelle Einstufung.
+Läuft Nula ohne Listen, steht das sichtbar unter Einstellungen.
+
+Zusätzlich stoppt derselbe Filter eine **Navigation im Hauptframe** auf ein Werbeziel. Das
 deckt den Fall ab, dass eine Seite den aktuellen Tab auf die Werbung schickt und das
-eigentliche Ziel daneben aufmacht.
+eigentliche Ziel daneben aufmacht. Der Hauptframe wird dabei bewusst nicht über `webRequest`
+abgebrochen — das ergäbe eine Fehlerseite — sondern die Navigation angehalten, sodass die
+Seite einfach stehen bleibt.
 
 ### Popups blockieren
 
@@ -546,6 +563,7 @@ Die Einzelheiten mit Fundstellen stehen in
 ## Tests
 
 ```bash
+npm run filters # Filterlisten holen und uebersetzen (einmal vor dem ersten Start)
 npm test        # Electron: Sitzung, Tabs, Blocker, Spuren auf der Platte, Kryptographie
 npm run test:ui # Rendert die Oberfläche, prüft auf Konsolenfehler, legt Screenshots ab
 ```
@@ -578,7 +596,8 @@ src/
     vaultcrypto.js  Argon2id, Vault-Verschlüsselung, hybrides Entsiegeln
     backup.js       Verschlüsseltes Exportformat und sicheres Dateischreiben
     api.js          HTTP-Client zum Server
-    blocker.js      Werbe- und Tracker-Blocker, Header-Bereinigung
+    blocker.js      Filterlisten-Engine, eingebaute Hostliste, Header-Bereinigung
+    filters/        Beim Bauen erzeugt: engine.bin und meta.json
     popupguard.js   Popup- und Pop-under-Sperre
     urls.js         Adresse oder Suche
     config.js       Die einzige automatisch dauerhaft geschriebene Datei

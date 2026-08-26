@@ -10,12 +10,13 @@ const { WebContentsView, shell } = require('electron');
 const path = require('node:path');
 const { isSafeNavigationUrl, NEW_TAB } = require('./urls');
 const { HOLD_MS } = require('./popupguard');
+const blocker = require('./blocker');
 
 const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with renderer CSS
 const PANEL_WIDTH = 384; // .panel in the renderer CSS, keep in sync
 
 class TabManager {
-  constructor(win, session, onChange, { guard = null, onBlocked = () => {} } = {}) {
+  constructor(win, session, onChange, { guard = null, onBlocked = () => {}, cosmeticsEnabled = () => true } = {}) {
     this.win = win;
     this.session = session;
     this.onChange = onChange;
@@ -23,6 +24,8 @@ class TabManager {
     // bleibt; fehlt er, verhaelt sich alles wie vorher.
     this.guard = guard;
     this.onBlocked = onBlocked;
+    // Kosmetik haengt an derselben Einstellung wie die Werbesperre.
+    this.cosmeticsEnabled = cosmeticsEnabled;
     // Zurueckgehaltene Fenster je Tab, siehe holdPopup().
     this.heldPopups = new Map(); // tabId -> [{ timer, url, opts }]
     this.tabs = new Map(); // id -> { id, view, url, title, loading, canGoBack, canGoForward, pinned }
@@ -56,6 +59,17 @@ class TabManager {
 
   layout() {
     const b = this.bounds();
+    /*
+     * Ein Fenster, das gerade minimiert, verborgen oder noch nicht vermessen
+     * ist, meldet 0x0. Diese Null in alle Views zu schreiben macht die Seite
+     * unsichtbar - und sichtbar wird sie erst wieder, wenn irgendetwas erneut
+     * layoutet, beim Nutzer also fruehestens beim naechsten Groessenwechsel.
+     * Dann lieber gar nichts tun und die alten Groessen stehen lassen.
+     *
+     * Nicht zu verwechseln mit this.visible: das ist die gewollte Null beim
+     * Sperren und muss weiterhin durchkommen.
+     */
+    if (this.visible && (b.width <= 0 || b.height <= 0)) return;
     for (const tab of this.tabs.values()) {
       tab.view.setBounds(tab.id === this.activeId && this.visible ? b : { x: 0, y: 0, width: 0, height: 0 });
     }
@@ -127,6 +141,18 @@ class TabManager {
       tab.favicon = favicons[0] || null;
       this.emit();
     });
+    /*
+     * Kosmetische Regeln. Reines Netzwerkblocken laesst leere Kaesten stehen,
+     * die Seite sieht danach kaputt aus. Das CSS kommt aus denselben Listen und
+     * wird pro Seite einmal eingespritzt - dom-ready ist der frueheste Moment,
+     * in dem es ein Dokument gibt, in das es passt.
+     */
+    wc.on('dom-ready', () => {
+      if (!this.cosmeticsEnabled()) return;
+      const styles = blocker.cosmeticStyles(wc.getURL());
+      if (styles) wc.insertCSS(styles, { cssOrigin: 'user' }).catch(() => {});
+    });
+
     wc.on('did-start-loading', () => {
       tab.loading = true;
       this.emit();
@@ -156,7 +182,7 @@ class TabManager {
       if (!isSafeNavigationUrl(target)) return event.preventDefault();
       // Der zweite haeufige Trick: nicht das neue Fenster traegt die Werbung,
       // sondern der aktuelle Tab wird dorthin geschickt.
-      if (this.guard && this.guard.blocksNavigation(target)) {
+      if (this.guard && this.guard.blocksNavigation(target, tab.url)) {
         event.preventDefault();
         this.onBlocked({ url: target, reason: 'ad', detail: 'Werbenetzwerk', kind: 'navigation' });
         return;

@@ -185,6 +185,7 @@ function pushStatus() {
     sync: state.syncStatus,
     blocked: state.blockStats.blocked,
     popupsBlocked: state.popupGuard ? state.popupGuard.stats.popups : 0,
+    filters: blocker.engineStatus(),
     device: config.load().deviceName,
     serverUrl: config.load().serverUrl,
   });
@@ -506,6 +507,7 @@ async function connectAndUnlock({ serverUrl, password, setupToken, rememberUrl }
     state.tabs = new TabManager(state.win, state.browseSession, (payload) => pushTabState(payload), {
       guard: state.popupGuard,
       onBlocked: (info) => reportBlockedPopup(info),
+      cosmeticsEnabled: () => state.sync?.vault.settings.blockTrackers !== false,
     });
     // background: Mittelklick und Strg-Klick oeffnen daneben, ohne den Fokus
     // mitzunehmen.

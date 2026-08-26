@@ -12,3 +12,7 @@ tools/*.log
 *.log
 .DS_Store
 Thumbs.db
+
+# Beim Bauen erzeugt, nicht im Repo: 4,9 MB Binaerdatei, die ohnehin veraltet.
+# "npm run filters" holt frische Listen.
+src/main/filters/

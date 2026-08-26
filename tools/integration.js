@@ -74,12 +74,15 @@ app.whenReady().then(async () => {
   check('Subdomain eines Trackers wird erkannt', blocker.hostMatches('cdn.doubleclick.net'));
   check('Normaler Host wird durchgelassen', !blocker.hostMatches('developer.mozilla.org'));
   check('Kein False-Positive bei ähnlichem Namen', !blocker.hostMatches('notdoubleclick.example.com'));
-  check('Pop-under-Netz wird als solches erkannt', blocker.classify('https://popads.net/pop.js') === 'popup');
-  check('Anzeigenauslieferung wird als Werbung erkannt',
-    blocker.classify('https://ad.doubleclick.net/x') === 'ad');
-  check('Analysedienst bleibt Tracker', blocker.classify('https://in.hotjar.com/api') === 'tracker');
-  check('Werbepfad auf harmlosem Host wird erkannt',
-    blocker.classify('https://cdn.example.org/pagead/js/adsbygoogle.js') === 'path');
+  check('Pop-under-Netz wird geblockt', blocker.classify('https://popads.net/pop.js') !== null);
+  check('Anzeigenauslieferung wird geblockt', blocker.classify('https://ad.doubleclick.net/x') !== null);
+  check('Analysedienst wird geblockt', blocker.classify('https://in.hotjar.com/api') !== null);
+  check('Werbepfad auf harmlosem Host wird geblockt',
+    blocker.classify('https://cdn.example.org/pagead/js/adsbygoogle.js') !== null);
+  // Ohne Listen bleibt die eingebaute Einstufung als Rueckfallebene gueltig.
+  check('Die eingebaute Hostliste stuft weiter selbst ein',
+    blocker.isAdHost('popads.net') && blocker.isAdHost('doubleclick.net')
+      && blocker.isTrackerHost('hotjar.com'));
   check('Normale Seite wird durchgelassen',
     blocker.classify('https://developer.mozilla.org/de/docs/Web/API') === null);
   check('"advertising" im Pfad ist kein Treffer',
@@ -105,6 +108,44 @@ app.whenReady().then(async () => {
     return net.fetch('file://' + file.replace(/\\/g, '/'));
   });
 
+  // --- filter lists --------------------------------------------------------
+  console.log('\nFilterlisten');
+  {
+    const status = blocker.engineStatus();
+    check('Die gebauten Filterlisten sind geladen', status.loaded === true,
+      'npm run filters ausgefuehrt?');
+    check('Es sind mehrere Listen drin', status.lists >= 5, `${status.lists} Listen`);
+    check('Und sechsstellig viele Regeln', status.rules > 100000,
+      `${status.rules} Regeln`);
+
+    // Genau die Adressen, die im Alltag als Pop-under aufgeschlagen sind. Sie
+    // stehen auf keiner handgepflegten Hostliste - dafuer gibt es die Listen.
+    const ECHTE_POPUNDER = [
+      'https://salutetutortwiddling.com/sklnk/2122947?var=2122947&rv=1&bavar=0&puid=16901802577374662269',
+      'https://hai8g.com/partitial/5117867?var=10839600&ab2r=0&rhd=false&sf=1',
+      'https://www.gamazi.com/cmp/Q51TSQ/2ND6HMG/?sub1=2085224&sub2=2608261452478ff91c868b4b0d99d5b81e27',
+    ];
+    for (const url of ECHTE_POPUNDER) {
+      const host = new URL(url).hostname;
+      check(`${host} wird als Werbeziel erkannt`,
+        blocker.isAdTarget(url, 'https://irgendeine-seite.example/'));
+      check(`${host} steht NICHT in der eingebauten Hostliste`, !blocker.isAdHost(host));
+    }
+
+    check('Eine normale Seite bleibt frei',
+      !blocker.isAdTarget('https://developer.mozilla.org/de/', 'https://news.example/'));
+    check('Werbe-Skripte werden mit Typ erkannt',
+      blocker.matchLists('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',
+        { type: 'script', sourceUrl: 'https://news.example/' }) !== null);
+
+    // Kosmetik: ohne sie bleiben leere Kaesten stehen.
+    const css = blocker.cosmeticStyles('https://www.spiegel.de/');
+    check('Kosmetische Regeln kommen als CSS heraus', !!css && css.length > 100,
+      `${css ? css.length : 0} Zeichen`);
+    check('Interne Seiten bekommen kein CSS', blocker.cosmeticStyles('nula://newtab') === null);
+    check('Kaputte Adressen werfen nicht', blocker.cosmeticStyles('nicht-mal-eine-url') === null);
+  }
+
   // --- popup guard ---------------------------------------------------------
   console.log('\nPopup-Waechter');
   {
@@ -124,8 +165,12 @@ app.whenReady().then(async () => {
 
     g.noteGesture('t1');
     check('Nach einem Klick geht ein Fenster auf', ask('https://ziel.example.net/').allow);
+    // Der Name ist nicht beliebig: eine Testdomain mit "werbung" darin wird von
+    // EasyList Germany wirklich getroffen, und dann greift Regel 1 statt der
+    // Regel, um die es hier geht.
+
     check('Das zweite Fenster zum selben Klick wird gestoppt',
-      ask('https://werbung.example.net/').reason === 'burst');
+      ask('https://zweites.example.net/').reason === 'burst');
 
     clock += 1500;
     g.noteGesture('t1');
@@ -317,7 +362,7 @@ app.whenReady().then(async () => {
     openedByPage.length = 0;
     blockedPopups.length = 0;
     liveGuard.reputation.clear();
-    await link(TARGET, `a.addEventListener('click', () => window.open('https://werbung.example.net/', '_blank'));`);
+    await link(TARGET, `a.addEventListener('click', () => window.open('https://zweites.example.net/', '_blank'));`);
     await clickLink('left');
     check('Das Werbefenster zum navigierenden Klick faellt weg',
       openedByPage.length === 0, JSON.stringify(openedByPage));
@@ -346,6 +391,24 @@ app.whenReady().then(async () => {
   check('Beim Sperren wird auch der aktive Tab verborgen',
     tabs.tabs.get(tabs.activeId).view.getBounds().width === 0);
   tabs.setVisible(true);
+
+  /*
+   * Ein Fenster meldet kurzzeitig 0x0, wenn es minimiert oder noch nicht
+   * vermessen ist. Wuerde layout() das uebernehmen, waere die Seite weg und
+   * kaeme erst beim naechsten Groessenwechsel zurueck.
+   */
+  const vorher = tabs.tabs.get(tabs.activeId).view.getBounds();
+  const echteGroesse = win.getContentSize();
+  win.setContentSize(0, 0);
+  tabs.layout();
+  const waehrend = tabs.tabs.get(tabs.activeId).view.getBounds();
+  win.setContentSize(echteGroesse[0], echteGroesse[1]);
+  tabs.layout();
+  check('Ein Fenster ohne Groesse loescht die Tab-Ansicht nicht',
+    waehrend.width === vorher.width && waehrend.height === vorher.height,
+    `vorher=${vorher.width}x${vorher.height} waehrend=${waehrend.width}x${waehrend.height}`);
+  check('Danach stimmt die Groesse wieder',
+    tabs.tabs.get(tabs.activeId).view.getBounds().width === vorher.width);
 
   // Die Tab-Ansicht ist eine native View ueber dem HTML. Nimmt sie die volle
   // Breite ein, liegt das Panel dahinter und ist unsichtbar - genau das war bis

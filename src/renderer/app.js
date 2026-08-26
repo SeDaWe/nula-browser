@@ -329,6 +329,21 @@ function renderSettings() {
   $('#set-autolock').value = String(ui.settings.autoLockMinutes ?? 15);
   $('#set-blocker').checked = ui.settings.blockTrackers !== false;
   $('#set-popups').checked = ui.settings.blockPopups !== false;
+
+  // Herkunft der Filter sichtbar machen: ohne gebaute Listen greift nur die
+  // kleine eingebaute Hostliste, und das soll man sehen.
+  const f = ui.status.filters;
+  const hint = $('#set-blocker-hint');
+  const basis = 'Sperrt Anzeigen, Pop-under und Analyse auf Netzwerkebene und blendet die leeren Kästen aus.';
+  if (f && f.loaded) {
+    const stand = f.builtAt ? new Date(f.builtAt).toLocaleDateString('de-DE') : null;
+    const zahl = new Intl.NumberFormat('de-DE').format(f.rules || 0);
+    hint.textContent = `${basis} ${zahl} Regeln aus ${f.lists} Filterlisten${stand ? `, Stand ${stand}` : ''}.`;
+  } else if (f) {
+    hint.textContent = `${basis} Achtung: Filterlisten fehlen, es greift nur die eingebaute Hostliste.`;
+  } else {
+    hint.textContent = basis;
+  }
   $('#set-theme').checked = ui.settings.theme === 'light';
   document.documentElement.dataset.theme = ui.settings.theme === 'light' ? 'light' : 'dark';
 

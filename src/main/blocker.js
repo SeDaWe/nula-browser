@@ -3,13 +3,22 @@
 /*
  * Netzwerk-Blocker fuer Werbung und Tracking.
  *
- * Bewusst keine EasyList-Engine: Regellisten muessten bei jedem Start
- * nachgeladen werden, und genau dieser Request waere die erste Spur, die Nula
- * hinterlaesst. Stattdessen eine gepflegte Liste von Hosts, gematcht auf der
- * registrierbaren Domain, plus eine kleine Zahl sehr eng gefasster Pfadmuster.
+ * Zwei Schichten:
  *
- * Die Liste ist in drei Gruppen geteilt, weil der Popup-Waechter sie anders
- * gewichtet als der Request-Filter:
+ *   1. Die echten Filterlisten (EasyList, EasyPrivacy, uBlock Origins eigene
+ *      Listen, EasyList Germany, Peter Lowe). Sie werden BEIM BAUEN geladen und
+ *      als uebersetzte Engine mitgeliefert, siehe tools/build-filters.js. Zur
+ *      Laufzeit stellt Nula fuer Filter keine einzige Netzwerkanfrage - der
+ *      Rechner, der den Release baut, darf ins Netz, der Browser des Nutzers
+ *      muss es nicht. Das ist der Punkt, an dem die fruehere Begruendung
+ *      ("Listen muessten bei jedem Start nachgeladen werden") nicht mehr traegt.
+ *
+ *   2. Eine kleine gepflegte Hostliste als Rueckfallebene. Sie greift, wenn die
+ *      Engine fehlt (nicht gebaut) und dient dem Popup-Waechter als schnelle
+ *      Einstufung ohne Listenabfrage.
+ *
+ * Die gepflegte Liste ist in drei Gruppen geteilt, weil der Popup-Waechter sie
+ * anders gewichtet als der Request-Filter:
  *
  *   POPUP_HOSTS   Pop-under- und Interstitial-Netze. Ein Klick auf so einen
  *                 Host ist nie gewollt, deshalb werden sie auch als Ziel einer
@@ -18,6 +27,110 @@
  *                 das jemand von Hand ansteuert.
  *   TRACKER_HOSTS Analyse und Messung. Nur als Subrequest relevant.
  */
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+const ENGINE_FILE = path.join(__dirname, 'filters', 'engine.bin');
+const META_FILE = path.join(__dirname, 'filters', 'meta.json');
+
+let engine = null;
+let engineMeta = null;
+let Request = null;
+
+/**
+ * Laedt die gebaute Engine. Fehlt sie, laeuft Nula auf der Rueckfallebene
+ * weiter - das ist der Fall in einem frischen Checkout, in dem
+ * "npm run filters" noch nicht lief.
+ * @returns {boolean} ob die Engine steht
+ */
+function loadEngine() {
+  if (engine) return true;
+  try {
+    const adblocker = require('@ghostery/adblocker');
+    Request = adblocker.Request;
+    engine = adblocker.FiltersEngine.deserialize(fs.readFileSync(ENGINE_FILE));
+    try {
+      engineMeta = JSON.parse(fs.readFileSync(META_FILE, 'utf8'));
+    } catch {
+      engineMeta = null;
+    }
+    return true;
+  } catch (err) {
+    console.error(
+      `[nula] Filterlisten nicht geladen (${err.code === 'ENOENT' ? 'nicht gebaut' : err.message}). ` +
+        'Es greift nur die eingebaute Hostliste. Abhilfe: npm run filters'
+    );
+    engine = null;
+    return false;
+  }
+}
+
+function engineStatus() {
+  return {
+    loaded: !!engine,
+    builtAt: engineMeta?.builtAt || null,
+    lists: engineMeta?.sources?.length || 0,
+    rules: engineMeta?.filterRules || 0,
+  };
+}
+
+/*
+ * Electrons resourceType heisst anders als der Typ, den die Engine erwartet.
+ * Ein falscher Typ heisst stillschweigend falsche Treffer, denn viele Filter
+ * gelten nur fuer bestimmte Typen ($script, $image, $third-party).
+ */
+const RESOURCE_TYPES = {
+  mainFrame: 'main_frame',
+  subFrame: 'sub_frame',
+  stylesheet: 'stylesheet',
+  script: 'script',
+  image: 'image',
+  font: 'font',
+  object: 'object',
+  xhr: 'xhr',
+  ping: 'ping',
+  cspReport: 'csp_report',
+  media: 'media',
+  webSocket: 'websocket',
+  other: 'other',
+};
+
+/**
+ * Fragt die Listen. Ohne Engine immer false, dann uebernimmt die Hostliste.
+ * @returns {string|null} der Filter, der getroffen hat, oder null
+ */
+function matchLists(url, { type = 'other', sourceUrl = null } = {}) {
+  if (!engine) return null;
+  try {
+    const result = engine.match(Request.fromRawDetails({ type, url, sourceUrl: sourceUrl || undefined }));
+    return result.match ? String(result.filter) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * CSS, das die Kaesten ausblendet, die reines Netzwerkblocken leer
+ * zuruecklaesst. Ohne das sieht eine Seite nach dem Blocken kaputt aus.
+ * @returns {string|null}
+ */
+function cosmeticStyles(url) {
+  if (!engine) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    const hostname = parsed.hostname;
+    // Die registrierbare Domain ohne tldts: fuer die Regelauswahl reicht der
+    // Hostname, domain dient nur der Zuordnung von Ausnahmen.
+    const parts = hostname.split('.');
+    const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
+    const { styles } = engine.getCosmeticsFilters({ url, hostname, domain });
+    return styles && styles.length ? styles : null;
+  } catch {
+    return null;
+  }
+}
 
 // Pop-under-, Popup- und Interstitial-Netze. Diese Hosts sind die Ursache fuer
 // das klassische "jeder Klick oeffnet erst einen Werbe-Tab".
@@ -264,15 +377,21 @@ function hostMatches(hostname) {
 
 /**
  * Entscheidet ueber einen einzelnen Request.
- * @returns {'popup'|'ad'|'tracker'|'path'|null} Grund, oder null fuer erlaubt.
+ * @param {object} [context] resourceType und die Seite, von der er ausgeht.
+ * @returns {'liste'|'popup'|'ad'|'tracker'|'path'|null} Grund, oder null.
  */
-function classify(url) {
+function classify(url, context = {}) {
   let parsed;
   try {
     parsed = new URL(url);
   } catch {
     return null; // kaputte URL, damit soll Chromium umgehen
   }
+
+  // Erst die Listen: sie kennen Ausnahmen (@@) und Typen und sind damit
+  // treffsicherer als jede Hostliste.
+  if (matchLists(url, context)) return 'liste';
+
   const host = parsed.hostname;
   if (lookup(popupSet, host)) return 'popup';
   if (lookup(adSet, host)) return 'ad';
@@ -285,12 +404,37 @@ function classify(url) {
   return null;
 }
 
+/**
+ * Ist diese Adresse als ZIEL Werbung? Fuer den Popup-Waechter und die
+ * Navigationssperre, die beide ueber ein ganzes Dokument entscheiden.
+ * @param {string} url
+ * @param {string|null} sourceUrl Seite, von der aus geoeffnet wird.
+ */
+function isAdTarget(url, sourceUrl = null) {
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  if (isAdHost(host)) return true;
+  return !!matchLists(url, { type: 'document', sourceUrl });
+}
+
 /** Attach the blocker to a session. Returns a stats object that keeps counting. */
 function attach(session, isEnabled) {
+  loadEngine();
   const stats = { blocked: 0, popups: 0 };
   session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
     if (!isEnabled()) return callback({ cancel: false });
-    if (classify(details.url)) {
+    /*
+     * Der Hauptframe bleibt hier aussen vor. Ihn per webRequest abzubrechen
+     * ergaebe eine Fehlerseite; die Navigationssperre in tabs.js haelt ihn
+     * stattdessen an, sodass die Seite einfach stehenbleibt.
+     */
+    if (details.resourceType === 'mainFrame') return callback({ cancel: false });
+    const type = RESOURCE_TYPES[details.resourceType] || 'other';
+    if (classify(details.url, { type, sourceUrl: details.referrer || undefined })) {
       stats.blocked++;
       return callback({ cancel: true });
     }
@@ -317,8 +461,13 @@ function attach(session, isEnabled) {
 module.exports = {
   attach,
   classify,
+  cosmeticStyles,
+  engineStatus,
   hostMatches,
   isAdHost,
+  isAdTarget,
+  loadEngine,
+  matchLists,
   isPopupHost,
   isTrackerHost,
   POPUP_HOSTS,
