@@ -428,8 +428,73 @@ app.whenReady().then(async () => {
   check('Tab geschlossen', tabs.tabs.size === 1);
   check('Fokus fällt auf den verbleibenden Tab', tabs.activeId === idA);
 
+  /*
+   * Beim Schliessen uebernimmt der rechte Nachbar, am Ende der linke. Vorher
+   * sprang der Fokus immer auf den LETZTEN Tab - bei dreissig Tabs liegt der
+   * ausserhalb des sichtbaren Bereichs, und es sah aus, als waere gar nichts
+   * mehr ausgewaehlt.
+   */
+  tabs.closeAll();
+  const drei = [newId(), newId(), newId(), newId()];
+  drei.forEach((id) => tabs.create(id, 'nula://newtab', { activate: false }));
+  tabs.activate(drei[1]);
+  tabs.close(drei[1]);
+  check('Der rechte Nachbar uebernimmt', tabs.activeId === drei[2],
+    `erwartet ${drei[2]}, bekommen ${tabs.activeId}`);
+  check('Und nicht der letzte Tab', tabs.activeId !== drei[3]);
+  tabs.activate(drei[3]);
+  tabs.close(drei[3]);
+  check('Am Ende uebernimmt der linke Nachbar', tabs.activeId === drei[2]);
+  tabs.close(drei[0]);
+  check('Ein Tab ohne Fokus zu schliessen aendert den Fokus nicht', tabs.activeId === drei[2]);
+
   tabs.closeAll();
   check('Alle Tabs geschlossen', tabs.tabs.size === 0 && tabs.order.length === 0);
+
+  // --- schlafende Tabs -----------------------------------------------------
+  console.log('\nWiederhergestellte Tabs laden erst beim Anklicken');
+  {
+    /*
+     * Ohne das stiess das Entsperren mit dreissig Tabs dreissig Seitenladungen
+     * gleichzeitig an. Gemessen: 26 von 30 Tabs drehten sich nach drei Sekunden
+     * noch, alle erst nach 15 Sekunden fertig - auf einer langsamen Leitung
+     * entsprechend laenger. Mit Rueckstellung: null.
+     */
+    const schlaefer = newId();
+    const wacher = newId();
+    tabs.create(schlaefer, 'https://beispiel.example/artikel', {
+      activate: false, defer: true, title: 'Titel aus dem Vault',
+    });
+    tabs.create(wacher, 'nula://newtab', { activate: true });
+    await pause(400);
+
+    const t = tabs.tabs.get(schlaefer);
+    check('Ein zurueckgestellter Tab schlaeft', t.asleep === true);
+    check('Er hat nichts geladen', t.view.webContents.getURL() === '', t.view.webContents.getURL());
+    check('Er dreht sich nicht', t.loading === false);
+    check('Er behaelt den Titel aus dem Vault', t.title === 'Titel aus dem Vault');
+    check('Seine Adresse bleibt fuer den Vault erhalten',
+      t.url === 'https://beispiel.example/artikel');
+    check('Der Zustand steht im Status', tabs.serialize().tabs.find((x) => x.id === schlaefer).asleep === true);
+    check('Ein neuer Tab schlaeft nie', tabs.tabs.get(wacher).asleep === false);
+
+    tabs.activate(schlaefer);
+    await pause(300);
+    check('Anklicken weckt ihn', tabs.tabs.get(schlaefer).asleep === false);
+    check('Und stoesst das Laden an',
+      tabs.tabs.get(schlaefer).view.webContents.getURL().startsWith('https://beispiel.example'),
+      tabs.tabs.get(schlaefer).view.webContents.getURL());
+
+    // Auch der Weg ueber die Adressleiste muss wecken.
+    const zweiter = newId();
+    tabs.create(zweiter, 'https://beispiel.example/zwei', { activate: false, defer: true });
+    check('Zweiter Schlaefer angelegt', tabs.tabs.get(zweiter).asleep === true);
+    tabs.navigate(zweiter, 'https://beispiel.example/drei');
+    check('Navigieren weckt ihn ebenfalls', tabs.tabs.get(zweiter).asleep === false);
+
+    tabs.closeAll();
+    check('Danach ist wieder alles zu', tabs.tabs.size === 0);
+  }
 
   // --- tab strip -----------------------------------------------------------
   console.log('\nTab-Leiste bei vielen Tabs');
@@ -447,8 +512,10 @@ app.whenReady().then(async () => {
     }
 
     const ui2 = new BrowserWindow({
+      // Wie das echte Fenster: die Hoehe entscheidet ueber max-height: 70vh des
+      // Schloss-Fensters, ein flacher Testrahmen wuerde kuenstlich abschneiden.
       width: 1280,
-      height: 400,
+      height: 900,
       show: true,
       webPreferences: {
         preload: path.join(__dirname, '..', 'src', 'preload', 'chrome.js'),
@@ -537,8 +604,143 @@ app.whenReady().then(async () => {
     check('Das Mausrad rollt die Leiste seitwaerts', nachRad.scrollLeft > vorRad.scrollLeft,
       `vorher=${vorRad.scrollLeft} nachher=${nachRad.scrollLeft}`);
 
+    // --- das Fenster hinter dem Schloss ------------------------------------
+    const zeige = (info) => js(`
+      renderSiteInfo(${JSON.stringify(info)});
+      const b = document.querySelector('#siteinfo-body');
+      return {
+        zustand: document.querySelector('#siteinfo-state').textContent,
+        host: document.querySelector('#siteinfo-host').textContent,
+        text: b.textContent,
+        zeilen: [...b.querySelectorAll('.siteinfo-row')].map((r) =>
+          r.querySelector('dt').textContent + '=' + r.querySelector('dd').textContent),
+        warnungen: b.querySelectorAll('.siteinfo-note.warn').length,
+        klasse: document.querySelector('#siteinfo-icon').className,
+      };
+    `);
+
+    const sicher = await zeige({
+      url: 'https://beispiel.example/', host: 'beispiel.example', intern: false, secure: true, blocked: 47,
+      cert: {
+        subject: 'beispiel.example', subjectOrg: 'Beispiel GmbH', issuer: 'R11', issuerOrg: "Let's Encrypt",
+        validStart: '2026-06-01T00:00:00.000Z', validExpiry: '2026-12-01T00:00:00.000Z',
+        serialNumber: '04a1b2c3', fingerprint: 'sha256/AbCdEf', knownRoot: true,
+      },
+    });
+    check('Eine sichere Verbindung wird als solche benannt',
+      sicher.zustand === 'Verbindung ist verschlüsselt', sicher.zustand);
+    check('Der Aussteller steht drin', sicher.zeilen.some((z) => z === 'Aussteller=R11'),
+      sicher.zeilen.join(' | '));
+    check('Die Laufzeit wird als Datum gezeigt',
+      sicher.zeilen.some((z) => z.startsWith('Gültig bis=01. Dezember 2026')), sicher.zeilen.join(' | '));
+    check('Der Fingerabdruck steht drin',
+      sicher.zeilen.some((z) => z === 'Fingerabdruck=sha256/AbCdEf'));
+    check('Die Zahl der geblockten Anfragen steht drin',
+      sicher.zeilen.some((z) => z === 'Blockiert=47 Anfragen'), sicher.zeilen.join(' | '));
+    check('Bei anerkannter Wurzel keine Warnung', sicher.warnungen === 0);
+
+    const abgelaufen = await zeige({
+      url: 'https://alt.example/', host: 'alt.example', intern: false, secure: true, blocked: 0,
+      cert: {
+        subject: 'alt.example', issuer: 'Eigene CA',
+        validStart: '2020-01-01T00:00:00.000Z', validExpiry: '2021-01-01T00:00:00.000Z',
+        serialNumber: '01', fingerprint: 'sha256/Alt', knownRoot: false,
+      },
+    });
+    check('Ein abgelaufenes Zertifikat wird als abgelaufen gezeigt',
+      abgelaufen.zeilen.some((z) => z.includes('(abgelaufen)')), abgelaufen.zeilen.join(' | '));
+    check('Eine unbekannte Wurzel wird gewarnt', abgelaufen.warnungen === 1);
+
+    const unsicher = await zeige({
+      url: 'http://blank.example/', host: 'blank.example', intern: false, secure: false, blocked: 3, cert: null,
+    });
+    check('HTTP wird deutlich als unverschluesselt benannt',
+      unsicher.zustand === 'Verbindung ist nicht verschlüsselt' && unsicher.warnungen === 1,
+      JSON.stringify(unsicher.zustand));
+    check('Und das Schloss wird rot', unsicher.klasse.includes('insecure'), unsicher.klasse);
+
+    const intern = await zeige({ url: 'nula://newtab', host: null, intern: true, secure: false, blocked: 0, cert: null });
+    check('Interne Seiten werden als solche benannt', intern.zustand === 'Interne Seite');
+    check('Ohne Zertifikatszeilen', intern.zeilen.length === 0);
+
+    // Zertifikatsfelder kommen von der Gegenstelle: niemals als HTML deuten.
+    const boese = await zeige({
+      url: 'https://xss.example/', host: 'xss.example', intern: false, secure: true, blocked: 0,
+      cert: { subject: '<img src=x onerror=alert(1)>', issuer: 'CA', validStart: null, validExpiry: null,
+              serialNumber: null, fingerprint: null, knownRoot: true },
+    });
+    check('Ein Zertifikatsfeld wird nie als HTML gedeutet',
+      boese.text.includes('<img src=x onerror=alert(1)>'), boese.text.slice(0, 80));
+    const kleber = await js(`return document.querySelector('#siteinfo-body').querySelectorAll('img').length;`);
+    check('Es entsteht kein Element daraus', kleber === 0, String(kleber));
+
+    /*
+     * Ohne Bildschirmfoto laesst sich wenigstens die Geometrie pruefen: ein
+     * Fenster mit null Groesse oder eines, das rechts aus dem Fenster ragt,
+     * faellt hier auf.
+     */
+    const lage = await js(`
+      const box = document.querySelector('#siteinfo');
+      box.hidden = false;
+      const r = box.getBoundingClientRect();
+      const sichtbar = getComputedStyle(box).display !== 'none';
+      const ergebnis = {
+        sichtbar, breite: Math.round(r.width), hoehe: Math.round(r.height),
+        links: Math.round(r.left), rechts: Math.round(r.right),
+        oben: Math.round(r.top), fensterBreite: window.innerWidth,
+        laeuftUeber: box.scrollHeight > box.clientHeight + 1,
+      };
+      box.hidden = true;
+      return ergebnis;
+    `);
+    check('Das Fenster hat eine sichtbare Groesse',
+      lage.sichtbar && lage.breite > 300 && lage.hoehe > 120, JSON.stringify(lage));
+    check('Es haengt unter der Adressleiste', lage.oben >= 80 && lage.oben <= 100, JSON.stringify(lage));
+    check('Es ragt nicht aus dem Fenster',
+      lage.links >= 0 && lage.rechts <= lage.fensterBreite, JSON.stringify(lage));
+    check('Sein Inhalt passt hinein, ohne abgeschnitten zu werden', lage.laeuftUeber === false,
+      JSON.stringify(lage));
+
     ui2.destroy();
     for (const channel of ['nula:bootstrap', 'nula:activity']) ipcMain.removeHandler(channel);
+  }
+
+  // --- certificates --------------------------------------------------------
+  console.log('\nZertifikate hinter dem Schloss');
+  {
+    /*
+     * Chromium reicht Zertifikate nirgends nach aussen; setCertificateVerifyProc
+     * ist der einzige Weg. Der Rueckgabewert ist sicherheitskritisch: -3 heisst
+     * "nimm Chromiums eigenes Urteil", 0 hiesse "nimm alles an" - auch das
+     * selbst ausgestellte Zertifikat eines Angreifers.
+     */
+    const gesehen = new Map();
+    const certSes = session.fromPartition('cert-test');
+    certSes.setCertificateVerifyProc((request, callback) => {
+      if (request.certificate && request.hostname) {
+        gesehen.set(request.hostname, { cert: request.certificate, knownRoot: request.isIssuedByKnownRoot });
+      }
+      callback(-3);
+    });
+
+    const certWin = new BrowserWindow({ width: 400, height: 300, show: false, webPreferences: { session: certSes } });
+    await certWin.loadURL(TARGET).catch(() => {});
+    await pause(1200);
+
+    const host = new URL(TARGET).hostname;
+    const eintrag = gesehen.get(host);
+    check('Ein Zertifikat wird mitgeschrieben', !!eintrag, [...gesehen.keys()].join(', '));
+    if (eintrag) {
+      const c = eintrag.cert;
+      check('Es nennt einen Aussteller', !!(c.issuerName || c.issuer?.commonName),
+        JSON.stringify({ issuerName: c.issuerName, issuer: c.issuer?.commonName }));
+      check('Es hat eine Laufzeit', c.validStart > 0 && c.validExpiry > c.validStart);
+      check('Die Laufzeit laesst sich in ein Datum wandeln',
+        new Date(c.validExpiry * 1000).getFullYear() >= new Date().getFullYear());
+      check('Es hat einen Fingerabdruck', typeof c.fingerprint === 'string' && c.fingerprint.length > 10);
+      check('Es stammt von einer anerkannten Wurzel', eintrag.knownRoot === true);
+    }
+    certWin.destroy();
   }
 
   // --- disk hygiene --------------------------------------------------------

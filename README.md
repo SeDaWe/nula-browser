@@ -240,6 +240,17 @@ fehlgeschlagener Lauf lässt sich über **Run workflow** wiederholen, ohne die V
 
 Das Sperr-Kürzel ist global registriert und wirkt auch, wenn Nula nicht im Vordergrund ist.
 
+**Das Schloss in der Adressleiste** ist anklickbar und zeigt, was ein normaler Browser dort
+zeigt: ob die Verbindung verschlüsselt ist, für wen das Zertifikat ausgestellt wurde, wer es
+ausgestellt hat, seine Laufzeit, Seriennummer und Fingerabdruck. Dazu, wie viele Anfragen auf
+genau dieser Seite geblockt wurden. Ein abgelaufenes Zertifikat und ein Aussteller, der keine
+allgemein anerkannte Zertifizierungsstelle ist, werden deutlich markiert — bei deinem eigenen
+Server mit selbst signiertem Zertifikat ist Letzteres normal.
+
+**Wiederhergestellte Tabs laden erst beim Anklicken.** Nach dem Entsperren lädt nur der Tab,
+den du zuletzt offen hattest; die übrigen stehen mit ihrem Titel da und werden beim ersten
+Anklicken wach. Sie sind daran zu erkennen, dass sie etwas blasser sind.
+
 **Die Tab-Leiste** schrumpft die Tabs mit, bis sie 112 Pixel breit sind, und rollt danach.
 Gerollt wird mit dem Mausrad über der Leiste, mit einer Wischgeste am Trackpad oder über die
 beiden Pfeile links und rechts. Der aktive Tab wird von selbst in den Blick geholt.

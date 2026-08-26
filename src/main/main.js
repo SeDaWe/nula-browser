@@ -121,6 +121,7 @@ const state = {
   browseSession: null,
   blockStats: { blocked: 0 },
   popupGuard: null,
+  certs: new Map(), // hostname -> mitgeschriebenes Zertifikat
   blockedPopup: null, // letztes blockiertes Fenster, fuer "Trotzdem oeffnen"
   locked: true,
   lockTimer: null,
@@ -255,6 +256,7 @@ async function runLock(reason) {
   if (state.tabs) state.tabs.closeAll();
   // Die Ausnahmeliste haengt an der entsperrten Sitzung, nicht am Prozess.
   state.popupGuard?.allowedOpeners.clear();
+  state.certs.clear();
   state.blockedPopup = null;
   vaultcrypto.wipeKeys(state.keys);
   state.keys = null;
@@ -303,8 +305,20 @@ function restoreTabsFromVault() {
     state.tabs.create(newId(), 'nula://newtab');
     return;
   }
+  /*
+   * Nur der aktive Tab laedt. Alles andere wuerde beim Entsperren mit dreissig
+   * Tabs dreissig Seiten gleichzeitig anstossen - jede einzelne dauert dann
+   * ewig, und die Ladeanzeige dreht sich minutenlang, obwohl die sichtbare
+   * Seite laengst da ist. Die uebrigen laden beim ersten Aufrufen.
+   */
+  const aktiv = mine.length - 1;
   mine.forEach((t, i) => {
-    state.tabs.create(t.id, t.url, { activate: i === mine.length - 1, pinned: t.pinned });
+    state.tabs.create(t.id, t.url, {
+      activate: i === aktiv,
+      pinned: t.pinned,
+      defer: i !== aktiv,
+      title: t.title || null,
+    });
   });
 }
 
@@ -374,6 +388,30 @@ function createBrowseSession() {
   );
 
   state.blockStats = blocker.attach(ses, () => state.sync?.vault.settings.blockTrackers !== false);
+
+  /*
+   * Zertifikate mitschreiben, damit das Schloss in der Adressleiste etwas zu
+   * zeigen hat. Chromium reicht sie sonst nirgends nach aussen.
+   *
+   * callback(-3) heisst "nimm Chromiums eigenes Urteil". Das ist hier der
+   * einzig vertretbare Wert: mit callback(0) wuerde Nula JEDES Zertifikat
+   * annehmen, auch ein selbst ausgestelltes eines Angreifers. Diese Zeile
+   * pruegft nichts, sie schaut nur zu.
+   */
+  ses.setCertificateVerifyProc((request, callback) => {
+    if (request.certificate && request.hostname) {
+      state.certs.set(request.hostname, {
+        cert: request.certificate,
+        knownRoot: request.isIssuedByKnownRoot !== false,
+        errorCode: request.errorCode || 0,
+      });
+      // Unbegrenzt waere es ein Speicherleck ueber eine lange Sitzung.
+      if (state.certs.size > 300) {
+        state.certs.delete(state.certs.keys().next().value);
+      }
+    }
+    callback(-3);
+  });
   state.popupGuard = new PopupGuard({
     popupsBlocked: () => state.sync?.vault.settings.blockPopups !== false,
     adsBlocked: () => state.sync?.vault.settings.blockTrackers !== false,
@@ -947,6 +985,55 @@ function registerIpc() {
     state.sync.touch();
     resetLockTimer();
     pushVaultState();
+  }));
+
+  // ---- Seiteninformationen hinter dem Schloss ----
+  /*
+   * Was ein normaler Browser hinter dem Schloss zeigt: Verbindung, Aussteller,
+   * Laufzeit, Fingerabdruck. Dazu, was Nula auf dieser Seite geblockt hat.
+   */
+  ipcMain.handle('nula:site:info', guard(async () => {
+    requireUnlocked();
+    const tab = state.tabs?.tabs.get(state.tabs.activeId);
+    if (!tab) return null;
+
+    let parsed = null;
+    try {
+      parsed = new URL(tab.url);
+    } catch {
+      /* nula://newtab und Kaputtes fallen unten durch */
+    }
+    const intern = !parsed || parsed.protocol === 'nula:';
+    const host = intern ? null : parsed.hostname;
+    const eintrag = host ? state.certs.get(host) : null;
+    const c = eintrag?.cert;
+
+    const name = (principal) =>
+      principal?.commonName ||
+      (principal?.organizations && principal.organizations[0]) ||
+      null;
+
+    return {
+      url: tab.url,
+      host,
+      intern,
+      secure: !intern && parsed.protocol === 'https:',
+      blocked: blocker.tabBlocked(tab.view.webContents.id),
+      cert: c
+        ? {
+            subject: name(c.subject) || c.subjectName || null,
+            subjectOrg: (c.subject?.organizations || [])[0] || null,
+            issuer: name(c.issuer) || c.issuerName || null,
+            issuerOrg: (c.issuer?.organizations || [])[0] || null,
+            // Electron liefert Sekunden, die Oberflaeche will ein Datum.
+            validStart: c.validStart ? new Date(c.validStart * 1000).toISOString() : null,
+            validExpiry: c.validExpiry ? new Date(c.validExpiry * 1000).toISOString() : null,
+            serialNumber: c.serialNumber || null,
+            fingerprint: c.fingerprint || null,
+            knownRoot: eintrag.knownRoot,
+          }
+        : null,
+    };
   }));
 
   // ---- popups ----

@@ -220,6 +220,13 @@ body[data-platform="darwin"] .tabstrip { padding-left: 84px; }
 
 .tab:hover { background: var(--surface-2); color: var(--text); }
 
+/* Wiederhergestellt, aber noch nicht geladen: sichtbar zurueckgenommen, damit
+   erkennbar ist, warum dort noch kein Favicon steht. */
+.tab.is-asleep .tab-favicon,
+.tab.is-asleep .tab-title { opacity: 0.55; }
+.tab.is-asleep:hover .tab-favicon,
+.tab.is-asleep:hover .tab-title { opacity: 1; }
+
 .tab.is-active {
   background: var(--surface);
   border-color: var(--line);
@@ -394,7 +401,22 @@ body[data-platform="darwin"] .window-controls { display: none; }
 
 [data-theme="light"] .omnibox:focus-within { background: var(--surface); }
 
-.omni-scheme { font-size: 13px; color: var(--accent); display: grid; place-items: center; }
+.omni-scheme {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-control);
+  background: none;
+  font-size: 13px;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.omni-scheme:hover { background: var(--surface-2); }
 .omni-scheme.insecure { color: var(--danger); }
 .omni-scheme.neutral { color: var(--text-faint); }
 
@@ -1217,3 +1239,69 @@ label.check-row {
   }
   .panel { transition: none; }
 }
+
+/* ------------------------------------------------------- Seiteninfo-Fenster -- */
+
+.siteinfo {
+  position: absolute;
+  top: calc(var(--strip-h) + var(--bar-h) - 4px);
+  left: 96px;
+  z-index: 130;
+  width: 340px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-surface);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-lg);
+}
+
+.siteinfo[hidden] { display: none; }
+
+.siteinfo-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.siteinfo-icon { font-size: 18px; color: var(--accent); display: grid; place-items: center; }
+.siteinfo-icon.insecure { color: var(--danger); }
+.siteinfo-icon.neutral { color: var(--text-faint); }
+
+.siteinfo-headline { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.siteinfo-headline strong { font-size: 12.5px; }
+.siteinfo-headline span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.siteinfo-body { padding-top: 4px; }
+
+.siteinfo-section {
+  margin-top: 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.siteinfo-row {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+}
+
+.siteinfo-row:last-child { border-bottom: none; }
+.siteinfo-row dt { flex: none; width: 108px; color: var(--text-dim); }
+.siteinfo-row dd { flex: 1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.siteinfo-row dd.mono { font-family: var(--mono); font-size: 10.5px; }
+.siteinfo-note { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--text-dim); }
+.siteinfo-note.warn { color: var(--danger); }

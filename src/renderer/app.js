@@ -171,10 +171,15 @@ function renderTabs() {
   host.innerHTML = '';
   for (const tab of ui.tabs) {
     const el = document.createElement('div');
-    el.className = 'tab' + (tab.id === ui.activeId ? ' is-active' : '') + (tab.loading ? ' is-loading' : '');
+    el.className =
+      'tab' +
+      (tab.id === ui.activeId ? ' is-active' : '') +
+      (tab.loading ? ' is-loading' : '') +
+      // Wiederhergestellt, aber noch nicht geladen. Wird beim Anklicken wach.
+      (tab.asleep ? ' is-asleep' : '');
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', String(tab.id === ui.activeId));
-    el.title = tab.title || '';
+    el.title = (tab.title || '') + (tab.asleep ? ' — lädt beim Anklicken' : '');
 
     const icon = document.createElement(tab.favicon && !tab.loading ? 'img' : 'span');
     icon.className = 'tab-favicon' + (tab.favicon && !tab.loading ? '' : ' placeholder');
@@ -364,6 +369,128 @@ function renderDevices() {
       host.appendChild(el);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Seiteninformationen hinter dem Schloss
+// ---------------------------------------------------------------------------
+
+function closeSiteInfo() {
+  $('#siteinfo').hidden = true;
+  $('#omni-scheme').setAttribute('aria-expanded', 'false');
+}
+
+async function toggleSiteInfo() {
+  const box = $('#siteinfo');
+  if (!box.hidden) return closeSiteInfo();
+
+  const res = await call(window.nula.site.info());
+  if (!res.ok) return;
+  renderSiteInfo(res.data);
+  box.hidden = false;
+  $('#omni-scheme').setAttribute('aria-expanded', 'true');
+}
+
+function siteInfoRow(label, value, mono = false) {
+  if (!value) return '';
+  const row = document.createElement('div');
+  row.className = 'siteinfo-row';
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  if (mono) dd.className = 'mono';
+  // textContent, nicht innerHTML: Zertifikatsfelder kommen von der Gegenstelle.
+  dd.textContent = value;
+  row.append(dt, dd);
+  return row;
+}
+
+function renderSiteInfo(info) {
+  const icon = $('#siteinfo-icon');
+  const state = $('#siteinfo-state');
+  const host = $('#siteinfo-host');
+  const body = $('#siteinfo-body');
+  body.innerHTML = '';
+
+  if (!info || info.intern) {
+    icon.className = 'siteinfo-icon neutral';
+    icon.innerHTML = '<i class="ph ph-file"></i>';
+    state.textContent = 'Interne Seite';
+    host.textContent = info?.url || 'nula://newtab';
+    const note = document.createElement('p');
+    note.className = 'siteinfo-note';
+    note.textContent = 'Diese Seite gehört zu Nula selbst und wird nicht aus dem Netz geladen.';
+    body.appendChild(note);
+    return;
+  }
+
+  host.textContent = info.host;
+  if (info.secure) {
+    icon.className = 'siteinfo-icon';
+    icon.innerHTML = '<i class="ph ph-lock-simple"></i>';
+    state.textContent = 'Verbindung ist verschlüsselt';
+  } else {
+    icon.className = 'siteinfo-icon insecure';
+    icon.innerHTML = '<i class="ph ph-lock-simple-open"></i>';
+    state.textContent = 'Verbindung ist nicht verschlüsselt';
+  }
+
+  if (!info.secure) {
+    const warn = document.createElement('p');
+    warn.className = 'siteinfo-note warn';
+    warn.textContent =
+      'Diese Seite wird über HTTP geladen. Alles, was du hier eingibst, ist auf dem Weg mitlesbar.';
+    body.appendChild(warn);
+  }
+
+  const abschnitt = (text) => {
+    const h = document.createElement('div');
+    h.className = 'siteinfo-section';
+    h.textContent = text;
+    body.appendChild(h);
+  };
+
+  const c = info.cert;
+  if (c) {
+    abschnitt('Zertifikat');
+    const datum = (iso) =>
+      iso ? new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' }) : null;
+    const abgelaufen = c.validExpiry && new Date(c.validExpiry) < new Date();
+    for (const row of [
+      siteInfoRow('Ausgestellt für', c.subject),
+      siteInfoRow('Organisation', c.subjectOrg),
+      siteInfoRow('Aussteller', c.issuer),
+      siteInfoRow('Gültig ab', datum(c.validStart)),
+      siteInfoRow('Gültig bis', datum(c.validExpiry) + (abgelaufen ? ' (abgelaufen)' : '')),
+      siteInfoRow('Seriennummer', c.serialNumber, true),
+      siteInfoRow('Fingerabdruck', c.fingerprint, true),
+    ]) {
+      if (row) body.appendChild(row);
+    }
+    if (!c.knownRoot) {
+      const note = document.createElement('p');
+      note.className = 'siteinfo-note warn';
+      note.textContent =
+        'Der Aussteller ist keine allgemein anerkannte Zertifizierungsstelle. Bei einem eigenen Server ist das normal, sonst ein Warnzeichen.';
+      body.appendChild(note);
+    }
+  } else if (info.secure) {
+    const note = document.createElement('p');
+    note.className = 'siteinfo-note';
+    note.textContent =
+      'Die Verbindung ist verschlüsselt. Die Zertifikatsdaten liegen noch nicht vor — nach einem Neuladen der Seite stehen sie hier.';
+    body.appendChild(note);
+  }
+
+  abschnitt('Auf dieser Seite');
+  body.appendChild(
+    siteInfoRow('Blockiert', new Intl.NumberFormat('de-DE').format(info.blocked || 0) + ' Anfragen')
+  );
+  const note = document.createElement('p');
+  note.className = 'siteinfo-note';
+  note.textContent =
+    'Kamera, Mikrofon, Standort und Benachrichtigungen sind für jede Seite abgelehnt. Verlauf und Cookies dieser Sitzung liegen nur im Arbeitsspeicher.';
+  body.appendChild(note);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +815,18 @@ function wire() {
   tabsHost.addEventListener('scroll', syncTabOverflow, { passive: true });
   new ResizeObserver(syncTabOverflow).observe(tabsHost);
 
+  $('#omni-scheme').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSiteInfo();
+  });
+  // Aussenklick und Esc schliessen es, wie jedes andere Popover auch.
+  document.addEventListener('click', (e) => {
+    if (!$('#siteinfo').hidden && !$('#siteinfo').contains(e.target)) closeSiteInfo();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#siteinfo').hidden) closeSiteInfo();
+  });
+
   $('#btn-panel-settings').addEventListener('click', () => togglePanel('settings'));
   $('#btn-panel-close').addEventListener('click', closePanel);
   $('#btn-lock').addEventListener('click', () => window.nula.lock());
@@ -863,6 +1002,7 @@ function focusOmni() {
 function subscribe() {
   window.nula.on('tabs', safely('tabs', (payload) => {
     ui.tabs = payload.tabs;
+    if (ui.activeId !== payload.activeId) closeSiteInfo();
     ui.activeId = payload.activeId;
     renderTabs();
     renderToolbar();

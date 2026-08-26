@@ -199,7 +199,44 @@ app.whenReady().then(async () => {
   await pause(900);
   await shoot(win, 'tabstrip-ende-dark');
 
-  // 8: die Meldung ueber ein blockiertes Fenster, samt Knopf
+  // 8: das Fenster hinter dem Schloss
+  await win.webContents.executeJavaScript(`
+    ui.tabs = [{ id: 's1', url: 'https://www.bundesbank.de/service', title: 'Service', loading: false }];
+    ui.activeId = 's1';
+    renderTabs(); renderToolbar();
+    renderSiteInfo({
+      url: 'https://www.bundesbank.de/service', host: 'www.bundesbank.de', intern: false,
+      secure: true, blocked: 12,
+      cert: {
+        subject: 'www.bundesbank.de', subjectOrg: 'Deutsche Bundesbank',
+        issuer: 'Telekom Security ServerID OV Class 2 CA', issuerOrg: 'Deutsche Telekom Security GmbH',
+        validStart: '2026-03-14T00:00:00.000Z', validExpiry: '2027-03-14T00:00:00.000Z',
+        serialNumber: '3a9f04c1b7e26d58', fingerprint: 'A4:1B:9C:D2:7E:03:55:88:F1:6A:2C:9B:40:D7:E8:12',
+        knownRoot: true,
+      },
+    });
+    document.querySelector('#siteinfo').hidden = false;
+    true;
+  `);
+  await pause(520);
+  await shoot(win, 'siteinfo-dark');
+
+  await win.webContents.executeJavaScript(`
+    document.documentElement.dataset.theme = 'light';
+    renderSiteInfo({
+      url: 'http://alt.example/login', host: 'alt.example', intern: false, secure: false, blocked: 3, cert: null,
+    });
+    true;
+  `);
+  await pause(420);
+  await shoot(win, 'siteinfo-unsicher-light');
+  await win.webContents.executeJavaScript(`
+    document.documentElement.dataset.theme = 'dark';
+    document.querySelector('#siteinfo').hidden = true;
+    true;
+  `);
+
+  // 9: die Meldung ueber ein blockiertes Fenster, samt Knopf
   await win.webContents.executeJavaScript(`
     document.documentElement.dataset.theme = 'dark';
     closePanel();

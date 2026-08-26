@@ -422,6 +422,21 @@ function isAdTarget(url, sourceUrl = null) {
 }
 
 /** Attach the blocker to a session. Returns a stats object that keeps counting. */
+/*
+ * Wie viel auf der aktuellen Seite eines Tabs geblockt wurde. Das Schloss-
+ * Fenster zeigt die Zahl an, und sie faengt bei jeder neuen Seite von vorn an -
+ * zurueckgesetzt wird sie aus tabs.js beim Navigationsbeginn.
+ */
+const perTab = new Map(); // webContentsId -> Anzahl
+
+function tabBlocked(webContentsId) {
+  return perTab.get(webContentsId) || 0;
+}
+
+function forgetTab(webContentsId) {
+  perTab.delete(webContentsId);
+}
+
 function attach(session, isEnabled) {
   loadEngine();
   const stats = { blocked: 0, popups: 0 };
@@ -436,6 +451,9 @@ function attach(session, isEnabled) {
     const type = RESOURCE_TYPES[details.resourceType] || 'other';
     if (classify(details.url, { type, sourceUrl: details.referrer || undefined })) {
       stats.blocked++;
+      if (details.webContentsId != null) {
+        perTab.set(details.webContentsId, (perTab.get(details.webContentsId) || 0) + 1);
+      }
       return callback({ cancel: true });
     }
     callback({ cancel: false });
@@ -463,11 +481,13 @@ module.exports = {
   classify,
   cosmeticStyles,
   engineStatus,
+  forgetTab,
   hostMatches,
   isAdHost,
   isAdTarget,
   loadEngine,
   matchLists,
+  tabBlocked,
   isPopupHost,
   isTrackerHost,
   POPUP_HOSTS,

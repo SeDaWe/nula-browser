@@ -12,6 +12,14 @@ const { isSafeNavigationUrl, NEW_TAB } = require('./urls');
 const { HOLD_MS } = require('./popupguard');
 const blocker = require('./blocker');
 
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
+
 const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with renderer CSS
 const PANEL_WIDTH = 384; // .panel in the renderer CSS, keep in sync
 
@@ -89,6 +97,7 @@ class TabManager {
           canGoForward: t.canGoForward,
           pinned: t.pinned,
           favicon: t.favicon || null,
+          asleep: !!t.asleep,
         };
       }),
     };
@@ -98,7 +107,16 @@ class TabManager {
     this.onChange(this.serialize());
   }
 
-  create(id, url, { activate = true, pinned = false } = {}) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.defer] Ansicht anlegen, aber noch nicht laden. Beim
+   *   Wiederherstellen von dreissig Tabs wuerden sonst dreissig Seiten
+   *   gleichzeitig laden: jede einzelne dauert dann ewig, und die Ladeanzeige
+   *   dreht sich minutenlang. Geladen wird beim ersten Aufrufen des Tabs.
+   * @param {string} [opts.title] Titel aus dem Vault, damit ein schlafender Tab
+   *   nicht "Neuer Tab" heisst.
+   */
+  create(id, url, { activate = true, pinned = false, defer = false, title = null } = {}) {
     const initialUrl = url && isSafeNavigationUrl(url) ? url : NEW_TAB;
     const view = new WebContentsView({
       webPreferences: {
@@ -115,7 +133,10 @@ class TabManager {
       id,
       view,
       url: initialUrl,
-      title: 'Neuer Tab',
+      // Schlafende Tabs behalten den Titel aus dem Vault, sonst waere die
+      // Leiste nach dem Entsperren eine Reihe gleicher "Neuer Tab".
+      title: title || (defer ? hostOf(initialUrl) || 'Tab' : 'Neuer Tab'),
+      asleep: defer && initialUrl !== NEW_TAB,
       loading: false,
       canGoBack: false,
       canGoForward: false,
@@ -160,6 +181,10 @@ class TabManager {
     wc.on('did-stop-loading', () => {
       tab.loading = false;
       refresh();
+    });
+    wc.on('did-start-navigation', (_e, _url, _inPage, isMainFrame) => {
+      // Der Zaehler im Schloss-Fenster gilt pro Seite, nicht pro Sitzung.
+      if (isMainFrame) blocker.forgetTab(wc.id);
     });
     wc.on('did-navigate', (_e, navUrl) => {
       tab.url = navUrl;
@@ -237,7 +262,8 @@ class TabManager {
     // Standardgroesse statt der Null-Groesse eines Hintergrund-Tabs.
     if (activate) this.activate(id);
     else this.layout();
-    this.navigate(id, initialUrl);
+    // activate() weckt einen schlafenden Tab selbst, hier also nichts tun.
+    if (!tab.asleep) this.navigate(id, initialUrl);
     this.emit();
     return tab;
   }
@@ -289,6 +315,13 @@ class TabManager {
     if (!this.tabs.has(id)) return;
     this.activeId = id;
 
+    // Erster Aufruf eines schlafenden Tabs: jetzt wird geladen.
+    const wach = this.tabs.get(id);
+    if (wach.asleep) {
+      wach.asleep = false;
+      this.navigate(id, wach.url);
+    }
+
     // Re-stack first: removing and re-adding a child view discards its bounds,
     // so sizing has to happen after the view is back in the tree.
     const tab = this.tabs.get(id);
@@ -303,6 +336,8 @@ class TabManager {
   navigate(id, input) {
     const tab = this.tabs.get(id);
     if (!tab) return { ok: false, reason: `Kein offener Tab mit der ID ${id}` };
+    // Wer navigiert, weckt den Tab in jedem Fall.
+    tab.asleep = false;
     if (!isSafeNavigationUrl(input)) {
       return { ok: false, reason: `Adresse nicht erlaubt: ${input}` };
     }
@@ -320,6 +355,7 @@ class TabManager {
   close(id) {
     const tab = this.tabs.get(id);
     if (!tab) return;
+    const stelle = this.order.indexOf(id);
     this.win.contentView.removeChildView(tab.view);
     tab.view.webContents.close();
     this.tabs.delete(id);
@@ -327,7 +363,14 @@ class TabManager {
     if (this.guard) this.guard.forget(id);
     this.order = this.order.filter((t) => t !== id);
     if (this.activeId === id) {
-      this.activeId = this.order[this.order.length - 1] || null;
+      /*
+       * Der rechte Nachbar uebernimmt, am Ende der linke - so wie in jedem
+       * anderen Browser. Vorher sprang der Fokus immer auf den LETZTEN Tab.
+       * Bei drei Tabs faellt das kaum auf, bei dreissig liegt der ausserhalb
+       * des sichtbaren Bereichs der Leiste, und es sieht aus, als waere
+       * ueberhaupt nichts mehr ausgewaehlt.
+       */
+      this.activeId = this.order[stelle] ?? this.order[stelle - 1] ?? null;
       if (this.activeId) this.activate(this.activeId);
     }
     this.layout();

@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld('nula', {
     allowLast: () => invoke('nula:popup:allow'),
   },
 
+  site: {
+    info: () => invoke('nula:site:info'),
+  },
+
   backup: {
     exportAll: () => invoke('nula:backup:export'),
     importAll: () => invoke('nula:backup:import'),

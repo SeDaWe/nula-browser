@@ -50,7 +50,9 @@
       </div>
 
       <div class="omnibox" id="omnibox">
-        <span class="omni-scheme" id="omni-scheme" aria-hidden="true"><i class="ph ph-lock-simple"></i></span>
+        <button class="omni-scheme" id="omni-scheme" type="button"
+                title="Seiteninformationen" aria-label="Seiteninformationen"
+                aria-haspopup="dialog" aria-expanded="false"><i class="ph ph-lock-simple"></i></button>
         <input id="omni-input" type="text" spellcheck="false" autocomplete="off"
                placeholder="Adresse eingeben oder suchen" aria-label="Adresse oder Suche" />
         <button class="icon-btn omni-action" id="btn-bookmark" title="Lesezeichen hinzufügen" aria-label="Lesezeichen hinzufügen">
@@ -77,6 +79,17 @@
     </div>
 
     <div class="loadbar" id="loadbar" aria-hidden="true"></div>
+
+    <div class="siteinfo" id="siteinfo" hidden role="dialog" aria-label="Seiteninformationen">
+      <div class="siteinfo-head">
+        <span class="siteinfo-icon" id="siteinfo-icon"><i class="ph ph-lock-simple"></i></span>
+        <div class="siteinfo-headline">
+          <strong id="siteinfo-state">Verbindung</strong>
+          <span id="siteinfo-host"></span>
+        </div>
+      </div>
+      <div class="siteinfo-body" id="siteinfo-body"></div>
+    </div>
   </header>
 
   <!-- ================= Side panel ================= -->

@@ -2,6 +2,52 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.16.0] - 2026-08-26
+
+### Neu
+- **Das Schloss in der Adressleiste ist anklickbar** und zeigt, was ein normaler Browser dort
+  zeigt: Zustand der Verbindung, für wen das Zertifikat ausgestellt wurde, Aussteller,
+  Laufzeit, Seriennummer, Fingerabdruck — dazu, wie viele Anfragen auf **genau dieser Seite**
+  geblockt wurden. Bisher war es ein reines Symbol ohne Funktion
+- Ein abgelaufenes Zertifikat wird als abgelaufen ausgewiesen, ein Aussteller außerhalb der
+  anerkannten Zertifizierungsstellen wird gewarnt (beim eigenen Server mit selbst signiertem
+  Zertifikat ist das der Normalfall), und HTTP bekommt eine deutliche Warnung samt rotem
+  Schloss
+- Chromium reicht Zertifikate nirgends nach außen; der einzige Weg ist
+  `setCertificateVerifyProc`. Dessen Rückgabewert ist sicherheitskritisch: Nula gibt `-3`
+  zurück — „nimm Chromiums eigenes Urteil". Mit `0` würde **jedes** Zertifikat angenommen,
+  auch das selbst ausgestellte eines Angreifers. Die Stelle prüft nichts, sie schaut nur zu
+
+### Korrekturen
+- **Beim Schließen eines Tabs sprang der Fokus auf den letzten Tab**, nicht auf den Nachbarn:
+  `close()` griff zu `order[order.length - 1]`. Bei drei Tabs fällt das kaum auf, bei dreißig
+  liegt der letzte außerhalb des sichtbaren Bereichs der Leiste — es sah aus, als wäre gar
+  nichts mehr ausgewählt. Jetzt übernimmt der rechte Nachbar, am Ende der linke
+- **Wiederhergestellte Tabs laden erst beim Anklicken.** Bisher stieß das Entsperren mit
+  dreißig Tabs dreißig Seitenladungen gleichzeitig an. Gemessen mit dem echten TabManager:
+  nach drei Sekunden drehten sich 26 von 30 Tabs, alle erst nach 15 Sekunden fertig — auf
+  einer langsamen Leitung entsprechend länger. Mit der Rückstellung: **null Spinner nach drei
+  Sekunden**, 29 Tabs schlafend, und 37 statt 269 Statusmeldungen an die Oberfläche
+- Was dabei ausdrücklich **nicht** kaputt war: die Ladeanzeige selbst. Gegengeprüft wurde bei
+  allen 30 Tabs Nulas `loading`-Flag gegen `webContents.isLoading()` — kein einziger
+  Unterschied. Der Spinner hat nicht gelogen, die Tabs haben wirklich noch geladen
+- Schlafende Tabs behalten den Titel aus dem Vault, statt als Reihe gleicher „Neuer Tab"
+  dazustehen, und sind etwas blasser gezeichnet
+
+### Tests
+- 28 neue Prüfungen, zusammen 183. Zertifikate werden gegen eine **echte** HTTPS-Verbindung
+  geprüft: Aussteller, Laufzeit, Fingerabdruck, anerkannte Wurzel
+- Das Fenster hinter dem Schloss wird an der echten Oberfläche gemessen — Inhalt der Zeilen,
+  Datumsformat, Warnung bei abgelaufenem Zertifikat und unbekannter Wurzel, rotes Schloss bei
+  HTTP, sowie Größe und Lage, damit es weder unsichtbar ist noch aus dem Fenster ragt
+- Darunter eine Sicherheitsprüfung: Zertifikatsfelder kommen von der Gegenstelle und werden
+  nie als HTML gedeutet. Ein `<img src=x onerror=...>` im Zertifikatsnamen bleibt Text und
+  erzeugt kein Element
+- Schlafende Tabs: laden nichts, drehen sich nicht, behalten Titel und Adresse für den Vault,
+  und werden sowohl durch Anklicken als auch durch Navigieren geweckt
+- Der Fokus beim Schließen in allen drei Fällen: rechter Nachbar, linker Nachbar am Ende, und
+  ein Tab ohne Fokus verschiebt nichts
+
 ## [2.15.0] - 2026-08-26
 
 ### Korrekturen
