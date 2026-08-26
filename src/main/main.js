@@ -24,6 +24,7 @@ const { NulaApi } = require('./api');
 const { SyncEngine } = require('./sync');
 const { importableVault, mergeBackupVault, newId } = require('./vault');
 const blocker = require('./blocker');
+const { PopupGuard } = require('./popupguard');
 const { TabManager, CHROME_HEIGHT } = require('./tabs');
 const updater = require('./updater');
 const { resolveInput } = require('./urls');
@@ -119,6 +120,8 @@ const state = {
   tabs: null,
   browseSession: null,
   blockStats: { blocked: 0 },
+  popupGuard: null,
+  blockedPopup: null, // letztes blockiertes Fenster, fuer "Trotzdem oeffnen"
   locked: true,
   lockTimer: null,
   syncStatus: { state: 'idle', detail: null },
@@ -181,9 +184,39 @@ function pushStatus() {
     locked: state.locked,
     sync: state.syncStatus,
     blocked: state.blockStats.blocked,
+    popupsBlocked: state.popupGuard ? state.popupGuard.stats.popups : 0,
     device: config.load().deviceName,
     serverUrl: config.load().serverUrl,
   });
+}
+
+/*
+ * Ein blockiertes Fenster ist nur dann kein Verlust, wenn es sich doch noch
+ * oeffnen laesst. Die Adresse bleibt deshalb bis zum naechsten Treffer liegen,
+ * und die Oberflaeche bekommt genug, um sie anzubieten.
+ */
+function reportBlockedPopup(info) {
+  if (!info || !info.url) return;
+  // Der Waechter zaehlt nur, was durch decide() laeuft. Eine im Hauptframe
+  // gestoppte Navigation kommt an decide() vorbei und wird hier nachgetragen.
+  if (info.kind === 'navigation' && state.popupGuard) state.popupGuard.stats.popups++;
+
+  let host = null;
+  try {
+    host = new URL(info.url).hostname;
+  } catch {
+    /* decide() laesst nur http(s) durch, das hier kann eigentlich nicht passieren */
+  }
+
+  state.blockedPopup = { url: info.url, openerUrl: info.openerUrl || null };
+  chromeSend('nula:popup', {
+    url: info.url,
+    host,
+    reason: info.reason || null,
+    detail: info.detail || 'blockiert',
+    kind: info.kind || 'popup',
+  });
+  pushStatus();
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +252,9 @@ async function runLock(reason) {
     state.sync.stop();
   }
   if (state.tabs) state.tabs.closeAll();
+  // Die Ausnahmeliste haengt an der entsperrten Sitzung, nicht am Prozess.
+  state.popupGuard?.allowedOpeners.clear();
+  state.blockedPopup = null;
   vaultcrypto.wipeKeys(state.keys);
   state.keys = null;
   state.sync = null;
@@ -337,6 +373,11 @@ function createBrowseSession() {
   );
 
   state.blockStats = blocker.attach(ses, () => state.sync?.vault.settings.blockTrackers !== false);
+  state.popupGuard = new PopupGuard({
+    popupsBlocked: () => state.sync?.vault.settings.blockPopups !== false,
+    adsBlocked: () => state.sync?.vault.settings.blockTrackers !== false,
+    blocker,
+  });
 
   ses.setPreloads([]);
   ses.setSpellCheckerEnabled(false);
@@ -462,7 +503,10 @@ async function connectAndUnlock({ serverUrl, password, setupToken, rememberUrl }
     await ensureInboxIdentity(info, setupCode);
     state.locked = false;
 
-    state.tabs = new TabManager(state.win, state.browseSession, (payload) => pushTabState(payload));
+    state.tabs = new TabManager(state.win, state.browseSession, (payload) => pushTabState(payload), {
+      guard: state.popupGuard,
+      onBlocked: (info) => reportBlockedPopup(info),
+    });
     state.tabs.newTabRequestHandler = (target) => {
       state.tabs.create(newId(), target);
     };
@@ -899,6 +943,24 @@ function registerIpc() {
     state.sync.touch();
     resetLockTimer();
     pushVaultState();
+  }));
+
+  // ---- popups ----
+  /*
+   * "Trotzdem oeffnen". Neben dem einen Fenster wird die oeffnende Seite fuer
+   * den Rest der entsperrten Sitzung freigestellt, sonst muesste man auf einer
+   * Seite, die legitim Fenster braucht, bei jedem Klick erneut bestaetigen.
+   * Bekannte Werbenetze bleiben auch dann gesperrt: freigestellt wird die
+   * Seite, nicht ihr Werbepartner.
+   */
+  ipcMain.handle('nula:popup:allow', guard(async () => {
+    requireUnlocked();
+    const blocked = state.blockedPopup;
+    if (!blocked) return { opened: false, host: null };
+    state.blockedPopup = null;
+    const opener = blocked.openerUrl ? state.popupGuard.allowOpener(blocked.openerUrl) : null;
+    state.tabs.create(newId(), blocked.url);
+    return { opened: true, host: opener };
   }));
 
   ipcMain.handle('nula:backup:export', guard(async () => exportAllData()));

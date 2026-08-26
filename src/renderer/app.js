@@ -23,14 +23,34 @@ const ui = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toast(message, isError = false) {
+/*
+ * @param {object} [action] Optionaler Knopf, { label, onClick }. Meldungen mit
+ *   Knopf stehen laenger, weil sie eine Entscheidung verlangen statt nur zu
+ *   berichten.
+ */
+function toast(message, isError = false, action = null) {
   const el = $('#toast');
-  el.innerHTML = `<i class="ph ${isError ? 'ph-warning-circle' : 'ph-check-circle'}"></i><span></span>`;
+  const icon = action?.icon || (isError ? 'ph-warning-circle' : 'ph-check-circle');
+  el.innerHTML = `<i class="ph ${icon}"></i><span></span>`;
   el.querySelector('span').textContent = message;
   el.classList.toggle('is-error', isError);
+  // Ein Haken in Akzentfarbe waere fuer eine Sperrmeldung das falsche Signal.
+  el.classList.toggle('is-notice', !!action?.icon);
+  if (action) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.type = 'button';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => {
+      el.classList.remove('is-visible');
+      clearTimeout(toast._t);
+      action.onClick();
+    });
+    el.appendChild(btn);
+  }
   el.classList.add('is-visible');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('is-visible'), 3200);
+  toast._t = setTimeout(() => el.classList.remove('is-visible'), action ? 8000 : 3200);
 }
 
 function prettyUrl(url) {
@@ -308,10 +328,12 @@ function renderSettings() {
   $('#set-engine').value = ui.settings.searchEngine || 'duckduckgo';
   $('#set-autolock').value = String(ui.settings.autoLockMinutes ?? 15);
   $('#set-blocker').checked = ui.settings.blockTrackers !== false;
+  $('#set-popups').checked = ui.settings.blockPopups !== false;
   $('#set-theme').checked = ui.settings.theme === 'light';
   document.documentElement.dataset.theme = ui.settings.theme === 'light' ? 'light' : 'dark';
 
   $('#stat-blocked').textContent = new Intl.NumberFormat('de-DE').format(ui.status.blocked || 0);
+  $('#stat-popups').textContent = new Intl.NumberFormat('de-DE').format(ui.status.popupsBlocked || 0);
   $('#stat-device').textContent = ui.status.device || '-';
   $('#stat-server').textContent = ui.status.serverUrl ? hostOf(ui.status.serverUrl) : '-';
 }
@@ -599,6 +621,7 @@ function wire() {
     window.nula.settings.set({ autoLockMinutes: parseInt(e.target.value, 10) })
   );
   $('#set-blocker').addEventListener('change', (e) => window.nula.settings.set({ blockTrackers: e.target.checked }));
+  $('#set-popups').addEventListener('change', (e) => window.nula.settings.set({ blockPopups: e.target.checked }));
   $('#set-theme').addEventListener('change', (e) => {
     document.documentElement.dataset.theme = e.target.checked ? 'light' : 'dark';
     window.nula.settings.set({ theme: e.target.checked ? 'light' : 'dark' });
@@ -776,6 +799,23 @@ function subscribe() {
     label.textContent = map[payload.sync?.state] || 'Bereit';
     $('#btn-sync').title = payload.sync?.detail || 'Jetzt synchronisieren';
     if ($('#panel').classList.contains('is-open') && ui.panelView === 'settings') renderSettings();
+  }));
+
+  window.nula.on('popup', safely('popup', (payload) => {
+    const where = payload.host || 'Unbekannte Adresse';
+    toast(`Fenster blockiert: ${where} (${payload.detail})`, false, {
+      icon: 'ph-prohibit',
+      label: 'Trotzdem öffnen',
+      onClick: async () => {
+        const res = await call(window.nula.popups.allowLast());
+        if (!res.ok || !res.data?.opened) return;
+        toast(
+          res.data.host
+            ? `Geöffnet. ${res.data.host} darf bis zum Sperren Fenster öffnen.`
+            : 'Geöffnet.'
+        );
+      },
+    });
   }));
 
   window.nula.on('update', safely('update', (payload) => renderUpdate(payload)));

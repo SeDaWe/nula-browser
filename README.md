@@ -26,6 +26,7 @@ Läuft auf **Windows, macOS und Linux**. Der zugehörige Server liegt in
 - [Sync-Verhalten](#sync-verhalten)
 - [Daten exportieren und importieren](#daten-exportieren-und-importieren)
 - [Von außen befüllen](#von-außen-befüllen)
+- [Werbung und Popups](#werbung-und-popups)
 - [Was Nula auf die Platte schreibt](#was-nula-auf-die-platte-schreibt)
 - [Kryptographie](#kryptographie)
 - [Tests](#tests)
@@ -398,6 +399,62 @@ iOS-Kurzbefehle: **[API.md](https://github.com/SeDaWe/nula-server/blob/main/API.
 
 ---
 
+## Werbung und Popups
+
+Zwei getrennte Schalter unter **Einstellungen**, beide standardmäßig an.
+
+### Werbung und Tracker blockieren
+
+Ein Filter auf Netzwerkebene. Requests an bekannte Anzeigen-, Pop-under- und Analyse-Hosts
+werden abgebrochen, bevor eine Verbindung zustande kommt. Die Liste liegt in
+`src/main/blocker.js` und ist in drei Gruppen geteilt: Pop-under-Netze, Anzeigenauslieferung
+und Analyse. Dazu kommen ein paar sehr eng gefasste Pfadmuster für Hosts, auf denen auch
+echte Inhalte liegen — etwa `/pagead/`.
+
+Bewusst **keine EasyList-Engine**: Regellisten müssten bei jedem Start nachgeladen werden,
+und genau dieser Request wäre die erste Spur, die Nula hinterlässt. Der Preis dafür ist
+Reichweite. Die eingebaute Liste erwischt die großen Netze zuverlässig, aber nicht jeden
+Selbstbau-Banner einer einzelnen Seite.
+
+Zusätzlich stoppt derselbe Filter eine **Navigation im Hauptframe** auf ein Werbenetz. Das
+deckt den Fall ab, dass eine Seite den aktuellen Tab auf die Werbung schickt und das
+eigentliche Ziel daneben aufmacht.
+
+### Popups blockieren
+
+Gegen das klassische „jeder Klick öffnet erst einen Werbe-Tab". Chromium nennt das Prinzip
+*user activation*: ein Klick oder Tastendruck berechtigt zu genau **einem** neuen Fenster,
+danach ist die Berechtigung verbraucht. Electron reicht diese Information nicht durch, also
+führt Nula sie in `src/main/popupguard.js` selbst — gespeist aus dem `input-event` der
+WebContents, das nur bei echter Eingabe feuert und bei einem per Skript ausgelösten
+`element.click()` nie ankommt.
+
+Vier Regeln, in dieser Reihenfolge:
+
+| # | Bedingung | Ergebnis |
+|---|---|---|
+| 1 | Ziel ist ein bekanntes Werbe- oder Pop-under-Netz | immer blockiert |
+| 2 | Popup-Sperre aus, oder die öffnende Seite ist freigestellt | durchgelassen |
+| 3 | Kein Klick und kein Tastendruck in der letzten Sekunde | blockiert |
+| 4 | Die Eingabe hat ihr Fenster schon bekommen | blockiert |
+
+Regel 4 ist der eigentliche Pop-under-Fall: zwei Fenster aus einem Klick. Regel 3 fängt
+alles, was ein Timer aufmacht.
+
+Der normale Fall bleibt unberührt. Ein `target="_blank"` auf einen angeklickten Link ist
+Regel 4 mit genau einem Fenster und geht durch — Anmeldefenster von Banken oder
+Single-Sign-On also auch.
+
+**Nichts davon ist endgültig.** Jedes blockierte Fenster meldet sich unten mit seiner Adresse
+und einem Knopf **Trotzdem öffnen**. Wer den drückt, bekommt das Fenster, und die Seite, die
+es wollte, darf bis zum nächsten Sperren ohne Rückfrage weitere öffnen. Bekannte Werbenetze
+bleiben auch dann gesperrt: freigestellt wird die Seite, nicht ihr Werbepartner. Die
+Ausnahmeliste liegt nur im Arbeitsspeicher und wird beim Sperren geleert.
+
+Unter Einstellungen stehen beide Zähler: blockierte Anfragen und blockierte Fenster.
+
+---
+
 ## Was Nula auf die Platte schreibt
 
 Ohne eine bewusste Exportaktion genau eine Datei: `~/.nula/config.json`. Darin stehen ein
@@ -500,7 +557,8 @@ src/
     vaultcrypto.js  Argon2id, Vault-Verschlüsselung, hybrides Entsiegeln
     backup.js       Verschlüsseltes Exportformat und sicheres Dateischreiben
     api.js          HTTP-Client zum Server
-    blocker.js      Tracker-Blocker und Header-Bereinigung
+    blocker.js      Werbe- und Tracker-Blocker, Header-Bereinigung
+    popupguard.js   Popup- und Pop-under-Sperre
     urls.js         Adresse oder Suche
     config.js       Die einzige automatisch dauerhaft geschriebene Datei
     cleanup.js      Abgekoppelter Aufräumer für das Temp-Profil

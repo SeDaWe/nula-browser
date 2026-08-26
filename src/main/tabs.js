@@ -14,10 +14,14 @@ const CHROME_HEIGHT = 88; // title bar + tab strip + toolbar, keep in sync with 
 const PANEL_WIDTH = 384; // .panel in the renderer CSS, keep in sync
 
 class TabManager {
-  constructor(win, session, onChange) {
+  constructor(win, session, onChange, { guard = null, onBlocked = () => {} } = {}) {
     this.win = win;
     this.session = session;
     this.onChange = onChange;
+    // Popup-Waechter. Optional, damit der TabManager auch ohne ihn testbar
+    // bleibt; fehlt er, verhaelt sich alles wie vorher.
+    this.guard = guard;
+    this.onBlocked = onBlocked;
     this.tabs = new Map(); // id -> { id, view, url, title, loading, canGoBack, canGoForward, pinned }
     this.order = [];
     this.activeId = null;
@@ -146,14 +150,41 @@ class TabManager {
     });
 
     const guardNavigation = (event, target) => {
-      if (!isSafeNavigationUrl(target)) event.preventDefault();
+      if (!isSafeNavigationUrl(target)) return event.preventDefault();
+      // Der zweite haeufige Trick: nicht das neue Fenster traegt die Werbung,
+      // sondern der aktuelle Tab wird dorthin geschickt.
+      if (this.guard && this.guard.blocksNavigation(target)) {
+        event.preventDefault();
+        this.onBlocked({ url: target, reason: 'ad', detail: 'Werbenetzwerk', kind: 'navigation' });
+      }
     };
     wc.on('will-navigate', guardNavigation);
     wc.on('will-redirect', guardNavigation);
 
+    /*
+     * input-event feuert nur bei echter Eingabe. Ein per Skript ausgeloestes
+     * element.click() laeuft komplett im Renderer und kommt hier nie an - genau
+     * deshalb taugt es als Beleg fuer einen menschlichen Klick.
+     */
+    if (this.guard) {
+      wc.on('input-event', (_e, input) => {
+        if (input && (input.type === 'mouseDown' || input.type === 'keyDown')) {
+          this.guard.noteGesture(id);
+        }
+      });
+    }
+
     // Popups open as regular tabs; external protocols never touch the OS silently.
     wc.setWindowOpenHandler(({ url: target }) => {
-      if (isSafeNavigationUrl(target) && target !== NEW_TAB) this.emitNewTabRequest(target);
+      if (!isSafeNavigationUrl(target) || target === NEW_TAB) return { action: 'deny' };
+      if (this.guard) {
+        const verdict = this.guard.decide(id, { url: target, openerUrl: tab.url });
+        if (!verdict.allow) {
+          this.onBlocked({ url: target, ...verdict, kind: 'popup', openerUrl: tab.url });
+          return { action: 'deny' };
+        }
+      }
+      this.emitNewTabRequest(target);
       return { action: 'deny' };
     });
 
@@ -211,6 +242,7 @@ class TabManager {
     this.win.contentView.removeChildView(tab.view);
     tab.view.webContents.close();
     this.tabs.delete(id);
+    if (this.guard) this.guard.forget(id);
     this.order = this.order.filter((t) => t !== id);
     if (this.activeId === id) {
       this.activeId = this.order[this.order.length - 1] || null;

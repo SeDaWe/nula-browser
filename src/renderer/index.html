@@ -128,10 +128,18 @@
 
         <div class="field switch-field">
           <div>
-            <label for="set-blocker">Tracker blockieren</label>
-            <p class="hint">Blockiert bekannte Analyse- und Werbe-Endpunkte.</p>
+            <label for="set-blocker">Werbung und Tracker blockieren</label>
+            <p class="hint">Sperrt bekannte Anzeigen-, Pop-under- und Analyse-Endpunkte auf Netzwerkebene.</p>
           </div>
           <input type="checkbox" id="set-blocker" class="switch" />
+        </div>
+
+        <div class="field switch-field">
+          <div>
+            <label for="set-popups">Popups blockieren</label>
+            <p class="hint">Höchstens ein Fenster pro Klick, ohne Klick keines. Blockierte lassen sich aus der Meldung trotzdem öffnen.</p>
+          </div>
+          <input type="checkbox" id="set-popups" class="switch" />
         </div>
 
         <div class="field switch-field">
@@ -145,7 +153,11 @@
         <div class="stat-row" id="stat-row">
           <div class="stat">
             <span class="stat-value" id="stat-blocked">0</span>
-            <span class="stat-label">blockiert</span>
+            <span class="stat-label">Anfragen blockiert</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="stat-popups">0</span>
+            <span class="stat-label">Popups blockiert</span>
           </div>
           <div class="stat">
             <span class="stat-value" id="stat-device">-</span>

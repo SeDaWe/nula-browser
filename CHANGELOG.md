@@ -2,6 +2,59 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.12.0] - 2026-08-26
+
+### Neu
+- **Popup- und Pop-under-Sperre** (`src/main/popupguard.js`). Gegen das Muster „jeder Klick
+  öffnet erst einen Werbe-Tab, danach erst der eigentliche Link". Bisher machte
+  `setWindowOpenHandler` aus **jedem** `window.open()` einen Tab, ohne jede Prüfung — eine
+  Seite konnte also beliebig viele Fenster aufmachen, und Nula hat gehorcht. Jetzt gilt, was
+  Chromium *user activation* nennt: ein Klick oder Tastendruck berechtigt zu genau einem
+  neuen Fenster, danach ist die Berechtigung verbraucht. Electron reicht diese Information
+  nicht an den Handler durch, also führt Nula sie selbst — gespeist aus dem `input-event` der
+  WebContents, das nur bei echter Eingabe feuert und bei einem per Skript ausgelösten
+  `element.click()` nie ankommt. Vier Regeln: Werbenetz als Ziel → immer blockiert; Sperre
+  aus oder Seite freigestellt → durchgelassen; kein Klick in der letzten Sekunde → blockiert;
+  Klick hat sein Fenster schon bekommen → blockiert. Ein angeklicktes `target="_blank"` ist
+  der dritte Fall mit genau einem Fenster und geht durch, Anmeldefenster von Banken und
+  Single-Sign-On also auch
+- **„Trotzdem öffnen".** Jedes blockierte Fenster meldet sich mit seiner Adresse und einem
+  Knopf. Wer ihn drückt, bekommt das Fenster, und die öffnende Seite darf bis zum nächsten
+  Sperren ohne Rückfrage weitere öffnen. Bekannte Werbenetze bleiben auch dann gesperrt:
+  freigestellt wird die Seite, nicht ihr Werbepartner. Die Ausnahmeliste liegt nur im
+  Arbeitsspeicher und wird beim Sperren geleert
+- **Navigation im Hauptframe auf ein Werbenetz wird gestoppt.** Der zweite verbreitete Trick:
+  nicht das neue Fenster trägt die Werbung, sondern der aktuelle Tab wird dorthin geschickt
+  und das eigentliche Ziel daneben aufgemacht
+- Neuer Schalter **Popups blockieren** unter Einstellungen, Voreinstellung an, wird wie alle
+  Einstellungen mitsynchronisiert. Zweiter Zähler **Popups blockiert** in der Statistik
+
+### Geändert
+- **Der Blocker deckt jetzt Werbung ab, nicht nur Analyse.** Die Liste ist von 61 auf 176
+  Hosts gewachsen und in drei Gruppen geteilt, weil die Popup-Sperre sie anders gewichtet
+  als der Request-Filter: Pop-under-Netze (popads, propellerads, adsterra, exoclick, adcash,
+  hilltopads, …), Anzeigenauslieferung und Auktionen (amazon-adsystem, adform, 3lift,
+  indexww, media.net, mgid, revcontent, …) und Analyse. Dazu acht sehr eng gefasste
+  Pfadmuster für Hosts, auf denen auch echte Inhalte liegen, etwa `/pagead/`. Weiterhin
+  bewusst keine EasyList-Engine: Regellisten müssten bei jedem Start nachgeladen werden, und
+  genau dieser Request wäre die erste Spur, die Nula hinterlässt
+- Der Schalter heißt jetzt **Werbung und Tracker blockieren**, weil er genau das tut
+- Die Statistik unter Einstellungen ist ein 2×2-Raster statt drei Kacheln nebeneinander. Bei
+  384 Pixel Panelbreite bleibt der Servername damit lesbar
+- Meldungen unten können einen Knopf tragen und stehen dann 8 statt 3,2 Sekunden
+
+### Tests
+- 24 neue Prüfungen: die Einstufung einzelner Adressen durch den Blocker samt Gegenprobe,
+  dass „advertising" im Pfad **kein** Treffer ist, und der Wächter über eine eigene Uhr —
+  ohne Klick, nach einem Klick, zweites Fenster zum selben Klick, abgelaufener Klick,
+  Werbenetz trotz Klick, Sperre aus, Freistellung und ihre Grenzen
+- Dazu sechs Prüfungen im echten Tab, die den Weg durch `setWindowOpenHandler` und
+  `input-event` gehen statt nur die Entscheidungslogik: `window.open()` ohne Eingabe wird
+  gestoppt, ein per `sendInputEvent` echt zugestellter Klick lässt genau ein Fenster durch,
+  das zweite bleibt zu
+- Der Smoke-Test zeigt die Sperrmeldung samt Knopf als eigenen Screenshot
+- 102 Prüfungen im Integrationstest, alle grün, null Konsolenfehler im Smoke-Test
+
 ## [2.11.0] - 2026-08-23
 
 ### Korrekturen

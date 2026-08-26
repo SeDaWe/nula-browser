@@ -25,6 +25,7 @@ const problems = [];
 const STUBS = {
   'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'SMOKE', locked: true, platform: 'win32', version: '2.5.0', autoUpdate: true, update: { state: 'current', version: null, detail: null, percent: 0 } } },
   'nula:activity': { ok: true, data: null },
+  'nula:popup:allow': { ok: true, data: { opened: true, host: 'shop.example.org' } },
 };
 
 // Was die Oberflaeche tatsaechlich zur Navigation schickt.
@@ -105,8 +106,8 @@ app.whenReady().then(async () => {
       { id: 'b2', url: 'https://www.privacyguides.org/de/', title: 'Privacy Guides', folder: null, updatedAt: new Date(Date.now() - 3600000).toISOString() },
       { id: 'b3', url: 'https://codeberg.org/explore/repos', title: 'Codeberg Explore', folder: 'via Handy-Shortcut', updatedAt: new Date(Date.now() - 86400000).toISOString() }
     ];
-    ui.settings = { searchEngine: 'duckduckgo', autoLockMinutes: 15, blockTrackers: true, theme: 'dark' };
-    ui.status = { locked: false, sync: { state: 'synced' }, blocked: 1247, device: 'SMOKE-PC', serverUrl: 'https://sync.example.com' };
+    ui.settings = { searchEngine: 'duckduckgo', autoLockMinutes: 15, blockTrackers: true, blockPopups: true, theme: 'dark' };
+    ui.status = { locked: false, sync: { state: 'synced' }, blocked: 1247, popupsBlocked: 34, device: 'SMOKE-PC', serverUrl: 'https://sync.example.com' };
     document.querySelector('#sync-dot').dataset.state = 'synced';
     document.querySelector('#sync-label').textContent = 'Synchron';
     renderTabs(); renderToolbar(); renderBookmarks();
@@ -139,6 +140,24 @@ app.whenReady().then(async () => {
   `);
   await pause(320);
   await shoot(win, 'chrome-devices-light');
+
+  // 7: die Meldung ueber ein blockiertes Fenster, samt Knopf
+  await win.webContents.executeJavaScript(`
+    document.documentElement.dataset.theme = 'dark';
+    closePanel();
+    toast('Fenster blockiert: popads.net (Werbenetzwerk)', false, {
+      icon: 'ph-prohibit',
+      label: 'Trotzdem öffnen',
+      onClick: () => {},
+    });
+    true;
+  `);
+  await pause(520);
+  await shoot(win, 'popup-blocked-dark');
+  await win.webContents.executeJavaScript(`
+    document.querySelector('#toast').classList.remove('is-visible');
+    true;
+  `);
 
   // --- Regression: die Omnibox muss das Getippte schicken -------------------
   // blur() feuert den blur-Handler synchron, und der setzt das Feld ueber

@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('nula', {
     set: (patch) => invoke('nula:settings:set', patch),
   },
 
+  popups: {
+    allowLast: () => invoke('nula:popup:allow'),
+  },
+
   backup: {
     exportAll: () => invoke('nula:backup:export'),
     importAll: () => invoke('nula:backup:import'),
@@ -63,6 +67,7 @@ contextBridge.exposeInMainWorld('nula', {
       tabs: 'nula:tabs',
       vault: 'nula:vault',
       status: 'nula:status',
+      popup: 'nula:popup',
       locked: 'nula:locked',
       update: 'nula:update',
       newtab: 'nula:cmd:newtab',

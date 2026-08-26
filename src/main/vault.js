@@ -25,6 +25,7 @@ function emptyVault() {
       homepage: null,
       autoLockMinutes: 15,
       blockTrackers: true,
+      blockPopups: true,
       theme: 'dark',
       clearOnQuit: true,
       dohEnabled: true,

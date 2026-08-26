@@ -802,7 +802,9 @@ label.check-row {
 
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Vier Kacheln in zwei Reihen: bei 384px Panelbreite bleibt der Servername
+     noch lesbar, drei nebeneinander waeren zu schmal. */
+  grid-template-columns: repeat(2, 1fr);
   gap: 1px;
   margin: 24px 0 20px;
   padding: 1px;
@@ -1130,6 +1132,25 @@ label.check-row {
 .toast.is-visible { transform: translate(-50%, 0); opacity: 1; }
 .toast i { font-size: 15px; color: var(--accent); }
 .toast.is-error i { color: var(--danger); }
+.toast.is-notice i { color: var(--text-dim); }
+.toast.is-visible { pointer-events: auto; }
+
+.toast-action {
+  flex: none;
+  margin-left: 4px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+
+.toast-action:hover { background: var(--surface-3, var(--surface-2)); border-color: var(--accent); }
 
 /* -------------------------------------------------------------- scrollbar -- */
 

@@ -24,6 +24,7 @@ app.setPath('userData', RUN_PROFILE);
 app.setPath('sessionData', RUN_PROFILE);
 
 const blocker = require('../src/main/blocker');
+const { PopupGuard } = require('../src/main/popupguard');
 const { TabManager } = require('../src/main/tabs');
 const { newId } = require('../src/main/vault');
 const { resolveInput, isSafeNavigationUrl } = require('../src/main/urls');
@@ -63,6 +64,18 @@ app.whenReady().then(async () => {
   check('Subdomain eines Trackers wird erkannt', blocker.hostMatches('cdn.doubleclick.net'));
   check('Normaler Host wird durchgelassen', !blocker.hostMatches('developer.mozilla.org'));
   check('Kein False-Positive bei ähnlichem Namen', !blocker.hostMatches('notdoubleclick.example.com'));
+  check('Pop-under-Netz wird als solches erkannt', blocker.classify('https://popads.net/pop.js') === 'popup');
+  check('Anzeigenauslieferung wird als Werbung erkannt',
+    blocker.classify('https://ad.doubleclick.net/x') === 'ad');
+  check('Analysedienst bleibt Tracker', blocker.classify('https://in.hotjar.com/api') === 'tracker');
+  check('Werbepfad auf harmlosem Host wird erkannt',
+    blocker.classify('https://cdn.example.org/pagead/js/adsbygoogle.js') === 'path');
+  check('Normale Seite wird durchgelassen',
+    blocker.classify('https://developer.mozilla.org/de/docs/Web/API') === null);
+  check('"advertising" im Pfad ist kein Treffer',
+    blocker.classify('https://agentur.example.org/advertising-team/') === null);
+  check('isAdHost trennt Werbung von Analyse',
+    blocker.isAdHost('popads.net') && blocker.isAdHost('doubleclick.net') && !blocker.isAdHost('hotjar.com'));
   // Suchmaschine ausdruecklich setzen: der Test prueft, dass file:// zur Suche
   // wird, nicht welche Suchmaschine voreingestellt ist.
   check('file:// wird als Suchtext behandelt',
@@ -82,12 +95,91 @@ app.whenReady().then(async () => {
     return net.fetch('file://' + file.replace(/\\/g, '/'));
   });
 
+  // --- popup guard ---------------------------------------------------------
+  console.log('\nPopup-Waechter');
+  {
+    // Eigene Uhr, damit das Zeitfenster ohne echtes Warten geprueft werden kann.
+    let clock = 1000000;
+    const flags = { popups: true, ads: true };
+    const g = new PopupGuard({
+      popupsBlocked: () => flags.popups,
+      adsBlocked: () => flags.ads,
+      blocker,
+      now: () => clock,
+    });
+    const SITE = 'https://shop.example.org/artikel/4';
+    const ask = (url) => g.decide('t1', { url, openerUrl: SITE });
+
+    check('Ohne Klick kein Fenster', ask('https://ziel.example.net/').reason === 'noGesture');
+
+    g.noteGesture('t1');
+    check('Nach einem Klick geht ein Fenster auf', ask('https://ziel.example.net/').allow);
+    check('Das zweite Fenster zum selben Klick wird gestoppt',
+      ask('https://werbung.example.net/').reason === 'burst');
+
+    clock += 1500;
+    g.noteGesture('t1');
+    clock += 1500;
+    check('Ein alter Klick berechtigt nicht mehr',
+      ask('https://ziel.example.net/').reason === 'noGesture');
+
+    g.noteGesture('t1');
+    check('Werbenetz wird auch mit frischem Klick gestoppt',
+      ask('https://popads.net/x').reason === 'ad');
+    check('Der abgewiesene Versuch verbraucht den Klick nicht',
+      ask('https://ziel.example.net/').allow);
+
+    const zwischenstand = g.stats.popups;
+    flags.popups = false;
+    g.forget('t1');
+    check('Ausgeschaltet laesst der Waechter alles durch', ask('https://ziel.example.net/').allow);
+    check('Ausgeschaltet bleibt Werbung trotzdem gesperrt',
+      ask('https://propellerads.com/x').reason === 'ad');
+    flags.popups = true;
+
+    g.allowOpener(SITE);
+    check('Freigestellte Seite darf ohne Klick oeffnen', ask('https://ziel.example.net/').allow);
+    check('Die Freistellung gilt nicht fuer ihr Werbenetz',
+      ask('https://adsterra.com/x').reason === 'ad');
+    check('Ein anderer Tab profitiert nicht von der Freistellung',
+      g.decide('t2', { url: 'https://ziel.example.net/', openerUrl: 'https://andere.example.org/' })
+        .reason === 'noGesture');
+
+    check('Blockierte Fenster werden gezaehlt', g.stats.popups > zwischenstand);
+    check('Navigation ins Werbenetz wird gestoppt', g.blocksNavigation('https://popads.net/land'));
+    check('Normale Navigation laeuft durch',
+      !g.blocksNavigation('https://developer.mozilla.org/de/'));
+
+    flags.ads = false;
+    check('Ohne Werbesperre ist auch die Navigation frei',
+      !g.blocksNavigation('https://popads.net/land'));
+    flags.ads = true;
+
+    check('nula://newtab kommt nie als Popup durch',
+      !g.decide('t3', { url: 'nula://newtab' }).allow);
+    check('Fremde Schemata werden abgewiesen',
+      !g.decide('t3', { url: 'javascript:alert(1)' }).allow);
+  }
+
   // --- window and tabs -----------------------------------------------------
   console.log('\nTabs');
   const win = new BrowserWindow({ width: 1280, height: 800, show: true, backgroundColor: '#0a0b0d' });
 
   let lastState = null;
-  const tabs = new TabManager(win, ses, (s) => (lastState = s));
+  // Der Waechter haengt hier mit an, damit auch der echte Weg durch
+  // setWindowOpenHandler geprueft wird und nicht nur die Entscheidungslogik.
+  const blockedPopups = [];
+  const liveGuard = new PopupGuard({
+    popupsBlocked: () => true,
+    adsBlocked: () => true,
+    blocker,
+  });
+  const openedByPage = [];
+  const tabs = new TabManager(win, ses, (s) => (lastState = s), {
+    guard: liveGuard,
+    onBlocked: (info) => blockedPopups.push(info),
+  });
+  tabs.newTabRequestHandler = (url) => openedByPage.push(url);
 
   const idA = newId();
   tabs.create(idA, 'nula://newtab');
@@ -110,6 +202,52 @@ app.whenReady().then(async () => {
   check('Externe Seite geladen', loadedUrl.startsWith('http'), loadedUrl);
   const bodyLen = await wcB.executeJavaScript('document.body.innerText.length').catch(() => 0);
   check('Seite hat Inhalt gerendert', bodyLen > 0, `innerText: ${bodyLen} Zeichen`);
+
+  // --- popups im echten Tab ------------------------------------------------
+  console.log('\nPopups im laufenden Tab');
+  {
+    // Der Tab muss sichtbar sein, sonst laeuft sendInputEvent ins Leere.
+    tabs.activate(idA);
+    await pause(300);
+    const wc = tabs.tabs.get(idA).view.webContents;
+    wc.focus();
+    // executeJavaScript(code, true) setzt zwar die user activation der Seite,
+    // erzeugt aber kein Eingabeereignis - fuer den Waechter ist das also
+    // weiterhin ein Fenster, das niemand angeklickt hat.
+    await wc.executeJavaScript(`window.open('https://ziel.example.net/', '_blank')`, true).catch(() => {});
+    await pause(200);
+    check('window.open ohne Eingabe wird im echten Tab gestoppt',
+      blockedPopups.length === 1 && blockedPopups[0].reason === 'noGesture',
+      JSON.stringify(blockedPopups));
+    check('Das gestoppte Fenster wird nicht als Tab geoeffnet', openedByPage.length === 0);
+
+    // input-event ist die Quelle, aus der der Waechter echte Klicks lernt.
+    let sawInputEvent = false;
+    wc.once('input-event', () => (sawInputEvent = true));
+    wc.sendInputEvent({ type: 'mouseDown', x: 40, y: 40, button: 'left', clickCount: 1 });
+    wc.sendInputEvent({ type: 'mouseUp', x: 40, y: 40, button: 'left', clickCount: 1 });
+    await pause(200);
+    check('input-event meldet echte Eingaben an den Waechter', sawInputEvent);
+
+    await wc.executeJavaScript(`window.open('https://ziel.example.net/', '_blank')`, true).catch(() => {});
+    await pause(200);
+    check('Nach echtem Klick darf ein Fenster aufgehen',
+      openedByPage.length === 1 && openedByPage[0] === 'https://ziel.example.net/',
+      JSON.stringify(openedByPage));
+
+    await wc.executeJavaScript(`window.open('https://werbung.example.net/', '_blank')`, true).catch(() => {});
+    await pause(200);
+    check('Das zweite Fenster zum selben Klick bleibt zu',
+      openedByPage.length === 1 && blockedPopups.at(-1)?.reason === 'burst',
+      JSON.stringify(blockedPopups.at(-1)));
+
+    check('Der Waechter merkt sich die blockierte Adresse',
+      blockedPopups.at(-1)?.url === 'https://werbung.example.net/');
+
+    // Der Layout-Test danach erwartet idB als aktiven Tab.
+    tabs.activate(idB);
+    await pause(200);
+  }
 
   // --- bounds --------------------------------------------------------------
   console.log('\nLayout');
