@@ -19,7 +19,7 @@ const crypto = require('node:crypto');
 const RUN_PROFILE = path.join(os.tmpdir(), `nula-itest-${crypto.randomBytes(5).toString('hex')}`);
 fs.mkdirSync(RUN_PROFILE, { recursive: true });
 
-const { app, BrowserWindow, session, protocol, net } = require('electron');
+const { app, BrowserWindow, session, protocol, net, ipcMain } = require('electron');
 app.setPath('userData', RUN_PROFILE);
 app.setPath('sessionData', RUN_PROFILE);
 
@@ -430,6 +430,116 @@ app.whenReady().then(async () => {
 
   tabs.closeAll();
   check('Alle Tabs geschlossen', tabs.tabs.size === 0 && tabs.order.length === 0);
+
+  // --- tab strip -----------------------------------------------------------
+  console.log('\nTab-Leiste bei vielen Tabs');
+  {
+    /*
+     * Geprueft wird die echte Oberflaeche, nur ohne Bildschirmfoto: gemessen
+     * werden Breiten und Rollzustand. Der Smoke-Test kann das nicht ersetzen,
+     * er sieht nur, ob es huebsch aussieht.
+     */
+    for (const [channel, value] of Object.entries({
+      'nula:bootstrap': { ok: true, data: { serverUrl: null, deviceName: 'ITEST', locked: true, platform: 'win32', version: '0', autoUpdate: false, update: { state: 'current' } } },
+      'nula:activity': { ok: true, data: null },
+    })) {
+      ipcMain.handle(channel, () => value);
+    }
+
+    const ui2 = new BrowserWindow({
+      width: 1280,
+      height: 400,
+      show: true,
+      webPreferences: {
+        preload: path.join(__dirname, '..', 'src', 'preload', 'chrome.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    await ui2.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'index.html'));
+    await pause(900);
+
+    const js = (code) => ui2.webContents.executeJavaScript(`(() => { ${code} })()`);
+    const fuellen = (n) => js(`
+      document.querySelector('#lock').classList.add('is-hidden');
+      ui.tabs = Array.from({ length: ${n} }, (_, i) => ({
+        id: 't' + i, url: 'https://beispiel' + i + '.example/seite', loading: false,
+        title: 'Eine Seite mit einem ziemlich langen Titel Nummer ' + i,
+      }));
+      ui.activeId = 't0';
+      renderTabs();
+      return true;
+    `);
+    const messen = () => js(`
+      const host = document.querySelector('#tabs');
+      const breiten = [...host.querySelectorAll('.tab')].map((t) => t.offsetWidth);
+      return {
+        anzahl: breiten.length,
+        schmalster: Math.min(...breiten),
+        breitester: Math.max(...breiten),
+        scrollbar: document.querySelector('#tabs-area').classList.contains('is-scrollable'),
+        ueberhang: host.scrollWidth - host.clientWidth,
+        scrollLeft: host.scrollLeft,
+        prevAus: document.querySelector('#tabs-prev').disabled,
+        nextAus: document.querySelector('#tabs-next').disabled,
+      };
+    `);
+
+    await fuellen(3);
+    await pause(150);
+    const wenige = await messen();
+    check('Wenige Tabs behalten ihre volle Breite', wenige.breitester === 190,
+      JSON.stringify(wenige));
+    check('Und brauchen keine Rollknoepfe', wenige.scrollbar === false, JSON.stringify(wenige));
+
+    await fuellen(30);
+    await pause(150);
+    const viele = await messen();
+    check('Dreissig Tabs sind alle da', viele.anzahl === 30);
+    check('Kein Tab wird schmaler als 112 Pixel', viele.schmalster >= 112,
+      `schmalster=${viele.schmalster}`);
+    check('Die Leiste wird rollbar', viele.scrollbar === true && viele.ueberhang > 0,
+      JSON.stringify(viele));
+    check('Am linken Rand ist der Zurueck-Knopf aus', viele.prevAus === true);
+    check('Und der Vor-Knopf an', viele.nextAus === false);
+
+    // Der Knopf muss wirklich scrollen, nicht nur anders aussehen.
+    await js(`document.querySelector('#tabs-next').click(); return true;`);
+    await pause(600);
+    const nachRechts = await messen();
+    check('Der Vor-Knopf rollt die Leiste', nachRechts.scrollLeft > 0,
+      `scrollLeft=${nachRechts.scrollLeft}`);
+    check('Danach ist der Zurueck-Knopf an', nachRechts.prevAus === false);
+
+    // Neuzeichnen darf die Leiste nicht an den Anfang zurueckwerfen.
+    await js(`ui.tabs[5].title = 'Titel hat sich geaendert'; renderTabs(); return true;`);
+    await pause(150);
+    const nachNeuzeichnen = await messen();
+    check('Ein Neuzeichnen behaelt die Rollposition',
+      Math.abs(nachNeuzeichnen.scrollLeft - nachRechts.scrollLeft) < 2,
+      `vorher=${nachRechts.scrollLeft} nachher=${nachNeuzeichnen.scrollLeft}`);
+
+    // Ein Tab am anderen Ende muss von selbst in den Blick kommen.
+    await js(`ui.activeId = 't29'; renderTabs(); return true;`);
+    await pause(700);
+    const beimLetzten = await messen();
+    check('Ein Wechsel ans Ende holt den Tab in den Blick',
+      beimLetzten.scrollLeft > nachRechts.scrollLeft && beimLetzten.nextAus === true,
+      JSON.stringify(beimLetzten));
+
+    // Das Mausrad liefert nur deltaY; ohne Umlegen koennte man nicht scrollen.
+    await js(`ui.activeId = 't0'; renderTabs(); return true;`);
+    await pause(700);
+    const vorRad = await messen();
+    ui2.webContents.sendInputEvent({ type: 'mouseWheel', x: 300, y: 20, deltaX: 0, deltaY: -240, canScroll: true });
+    await pause(400);
+    const nachRad = await messen();
+    check('Das Mausrad rollt die Leiste seitwaerts', nachRad.scrollLeft > vorRad.scrollLeft,
+      `vorher=${vorRad.scrollLeft} nachher=${nachRad.scrollLeft}`);
+
+    ui2.destroy();
+    for (const channel of ['nula:bootstrap', 'nula:activity']) ipcMain.removeHandler(channel);
+  }
 
   // --- disk hygiene --------------------------------------------------------
   console.log('\nSpuren auf der Platte');

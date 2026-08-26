@@ -129,8 +129,45 @@ async function call(promise, { silent = false, slowAfterMs = 8000 } = {}) {
 // Tab strip
 // ---------------------------------------------------------------------------
 
+/*
+ * Sichtbarkeit und Zustand der beiden Rollknoepfe. Wird nach jedem Zeichnen,
+ * beim Scrollen und bei jeder Groessenaenderung nachgezogen.
+ */
+function syncTabOverflow() {
+  const host = $('#tabs');
+  const area = $('#tabs-area');
+  if (!host || !area) return;
+  const rest = host.scrollWidth - host.clientWidth;
+  area.classList.toggle('is-scrollable', rest > 1);
+  $('#tabs-prev').disabled = host.scrollLeft <= 0;
+  $('#tabs-next').disabled = host.scrollLeft >= rest - 1;
+}
+
+/*
+ * Den aktiven Tab sichtbar machen, ohne scrollIntoView: das scrollt auch
+ * Elternelemente und wuerde die ganze Oberflaeche verschieben.
+ */
+function scrollActiveTabIntoView() {
+  const host = $('#tabs');
+  const el = host?.querySelector('.tab.is-active');
+  if (!el) return;
+  const left = el.offsetLeft;
+  const right = left + el.offsetWidth;
+  if (left < host.scrollLeft) {
+    host.scrollTo({ left, behavior: 'smooth' });
+  } else if (right > host.scrollLeft + host.clientWidth) {
+    host.scrollTo({ left: right - host.clientWidth, behavior: 'smooth' });
+  }
+}
+
 function renderTabs() {
   const host = $('#tabs');
+  /*
+   * Die Leiste wird bei jeder Titel- und Ladeaenderung neu gezeichnet, und
+   * innerHTML = '' setzt scrollLeft auf null. Ohne das Merken springt die
+   * Leiste beim Tippen einer Adresse staendig an den Anfang zurueck.
+   */
+  const keepScroll = host.scrollLeft;
   host.innerHTML = '';
   for (const tab of ui.tabs) {
     const el = document.createElement('div');
@@ -168,6 +205,15 @@ function renderTabs() {
       if (e.button === 1) call(window.nula.tab.close(tab.id));
     });
     host.appendChild(el);
+  }
+
+  host.scrollLeft = keepScroll;
+  syncTabOverflow();
+  // Nur beim echten Wechsel nachfuehren, sonst kaempft die Leiste gegen jeden,
+  // der von Hand woanders hinscrollt.
+  if (ui.activeId !== renderTabs.lastActive) {
+    renderTabs.lastActive = ui.activeId;
+    scrollActiveTabIntoView();
   }
 }
 
@@ -615,6 +661,33 @@ function wire() {
     }
   });
   $('#btn-panel-bookmarks').addEventListener('click', () => togglePanel('bookmarks'));
+  // --- Tab-Leiste: Rad, Wischgeste, Knoepfe -------------------------------
+  const tabsHost = $('#tabs');
+  const page = () => Math.max(160, Math.round(tabsHost.clientWidth * 0.8));
+  $('#tabs-prev').addEventListener('click', () =>
+    tabsHost.scrollBy({ left: -page(), behavior: 'smooth' })
+  );
+  $('#tabs-next').addEventListener('click', () =>
+    tabsHost.scrollBy({ left: page(), behavior: 'smooth' })
+  );
+  /*
+   * Ein Mausrad liefert nur deltaY. Ohne das Umlegen koennte man mit der Maus
+   * gar nicht scrollen - eine Wischgeste am Trackpad liefert deltaX und laeuft
+   * ohnehin direkt durch.
+   */
+  tabsHost.addEventListener(
+    'wheel',
+    (e) => {
+      if (e.deltaX !== 0) return;
+      if (tabsHost.scrollWidth <= tabsHost.clientWidth) return;
+      e.preventDefault();
+      tabsHost.scrollBy({ left: e.deltaY, behavior: 'auto' });
+    },
+    { passive: false }
+  );
+  tabsHost.addEventListener('scroll', syncTabOverflow, { passive: true });
+  new ResizeObserver(syncTabOverflow).observe(tabsHost);
+
   $('#btn-panel-settings').addEventListener('click', () => togglePanel('settings'));
   $('#btn-panel-close').addEventListener('click', closePanel);
   $('#btn-lock').addEventListener('click', () => window.nula.lock());

@@ -150,21 +150,64 @@ body[data-platform="darwin"] .tabstrip { padding-left: 84px; }
   color: var(--text-faint);
 }
 
+/*
+ * Die Leiste schrumpft die Tabs, bis sie MIN_TAB breit sind, und scrollt
+ * danach. Vorher schrumpften sie unbegrenzt: bei dreissig Tabs war jeder
+ * dreissig Pixel breit, ohne lesbaren Titel und ohne treffbares Kreuz.
+ */
+.tabs-area {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  max-width: calc(100% - 340px);
+  -webkit-app-region: no-drag;
+}
+
 .tabs {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  max-width: calc(100% - 320px);
-  overflow: hidden;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Eine Rollleiste unter den Tabs waere in einer 40 Pixel hohen Leiste nur
+     im Weg; gescrollt wird mit Rad, Wischgeste und den beiden Knoepfen. */
+  scrollbar-width: none;
   -webkit-app-region: no-drag;
+  overscroll-behavior-x: contain;
 }
+
+.tabs::-webkit-scrollbar { display: none; }
+
+.tab-scroll {
+  display: none;
+  flex: none;
+  width: 22px;
+  height: 32px;
+  margin-bottom: 0;
+  place-items: center;
+  border: none;
+  border-radius: var(--r-control);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: color 0.16s var(--ease), opacity 0.16s var(--ease);
+}
+
+.tabs-area.is-scrollable .tab-scroll { display: grid; }
+.tab-scroll:hover:not(:disabled) { color: var(--text); }
+.tab-scroll:disabled { opacity: 0.3; cursor: default; }
+.tab-scroll i { font-size: 13px; }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  width: 190px;
+  /* Untergrenze statt min-width: 0. Darunter passen Favicon, ein Rest Titel und
+     das Schliesskreuz nicht mehr nebeneinander. */
+  flex: 0 1 190px;
+  min-width: 112px;
   height: 32px;
   padding: 0 6px 0 11px;
   border: 1px solid transparent;

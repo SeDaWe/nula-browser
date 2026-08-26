@@ -2,6 +2,38 @@
 
 Alle nennenswerten Änderungen an Nula.
 
+## [2.15.0] - 2026-08-26
+
+### Korrekturen
+- **Mit vielen Tabs war die Leiste nicht mehr bedienbar.** `.tab` hatte `width: 190px` und
+  `min-width: 0`, und weil `flex-shrink` voreingestellt 1 ist, schrumpften die Tabs
+  unbegrenzt: bei dreißig Tabs war jeder rund dreißig Pixel breit — kein lesbarer Titel, kein
+  treffbares Schließkreuz, und ein Klick landete leicht auf dem Nachbarn. Es gab schlicht
+  keine Untergrenze und keinen Überlauf
+- Jetzt schrumpfen die Tabs bis **112 Pixel** und die Leiste **rollt** danach, so wie in
+  Firefox und Chrome. Gerollt wird auf drei Wegen: Mausrad über der Leiste, Wischgeste am
+  Trackpad, oder die beiden Pfeile, die nur erscheinen, wenn es etwas zu rollen gibt und am
+  jeweiligen Ende ausgrauen
+- Das Mausrad brauchte eigene Arbeit: eine Maus liefert nur `deltaY`, das wird auf die
+  Waagerechte umgelegt. Eine Wischgeste liefert `deltaX` und läuft ohnehin direkt durch
+- **Der aktive Tab wird von selbst in den Blick geholt** — aber nur beim echten Wechsel,
+  sonst kämpft die Leiste gegen jeden, der von Hand woanders hinscrollt
+- **Ein Neuzeichnen warf die Leiste an den Anfang zurück.** `renderTabs()` läuft bei jeder
+  Titel- und Ladeänderung, und `innerHTML = ''` setzt `scrollLeft` auf null. Beim Tippen
+  einer Adresse sprang die Leiste dadurch ständig zurück. Die Position wird jetzt gemerkt
+- Die Rollleiste unter den Tabs ist ausgeblendet: in einer 40 Pixel hohen Leiste wäre sie nur
+  im Weg
+
+### Tests
+- 12 neue Prüfungen, zusammen 143. Gemessen wird die echte Oberfläche, nicht ein Bildschirm-
+  foto: drei Tabs behalten ihre vollen 190 Pixel und brauchen keine Pfeile, dreißig Tabs
+  bleiben alle mindestens 112 Pixel breit und machen die Leiste rollbar, der Vor-Knopf rollt
+  wirklich, ein Neuzeichnen behält die Position, ein Wechsel ans Ende holt den letzten Tab in
+  den Blick, und das Mausrad wird über ein echtes `sendInputEvent` geprüft
+- Der Smoke-Test hält die volle Leiste in zwei Zuständen fest, am Anfang und ans Ende
+  gerollt. Er ließ sich in dieser Sitzung auch wieder ausführen: der beschädigte
+  GPU-Prozess, der ihn in 2.13 und 2.14 blockierte, hat sich erholt
+
 ## [2.14.0] - 2026-08-26
 
 ### Neu

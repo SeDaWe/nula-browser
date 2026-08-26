@@ -172,7 +172,34 @@ app.whenReady().then(async () => {
   await pause(320);
   await shoot(win, 'chrome-devices-light');
 
-  // 7: die Meldung ueber ein blockiertes Fenster, samt Knopf
+  // 7: volle Tab-Leiste. Der Punkt, an dem Tabs frueher zu Streifen wurden.
+  await win.webContents.executeJavaScript(`
+    document.documentElement.dataset.theme = 'dark';
+    ui.settings.theme = 'dark';
+    closePanel();
+    ui.tabs = Array.from({ length: 24 }, (_, i) => ({
+      id: 'v' + i,
+      url: 'https://beispiel' + i + '.example/artikel',
+      title: ['Sicherheitsnachrichten', 'Web-APIs bei MDN', 'Hacker News', 'Privacy Guides',
+              'Codeberg Explore', 'Wetterbericht'][i % 6] + ' ' + (i + 1),
+      loading: i === 3,
+    }));
+    ui.activeId = 'v0';
+    renderTabs(); renderToolbar();
+    true;
+  `);
+  await pause(520);
+  await shoot(win, 'tabstrip-voll-dark');
+
+  await win.webContents.executeJavaScript(`
+    ui.activeId = 'v23';
+    renderTabs();
+    true;
+  `);
+  await pause(900);
+  await shoot(win, 'tabstrip-ende-dark');
+
+  // 8: die Meldung ueber ein blockiertes Fenster, samt Knopf
   await win.webContents.executeJavaScript(`
     document.documentElement.dataset.theme = 'dark';
     closePanel();

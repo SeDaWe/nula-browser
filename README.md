@@ -240,6 +240,10 @@ fehlgeschlagener Lauf lässt sich über **Run workflow** wiederholen, ohne die V
 
 Das Sperr-Kürzel ist global registriert und wirkt auch, wenn Nula nicht im Vordergrund ist.
 
+**Die Tab-Leiste** schrumpft die Tabs mit, bis sie 112 Pixel breit sind, und rollt danach.
+Gerollt wird mit dem Mausrad über der Leiste, mit einer Wischgeste am Trackpad oder über die
+beiden Pfeile links und rechts. Der aktive Tab wird von selbst in den Blick geholt.
+
 ---
 
 ## Was beim Sperren passiert
